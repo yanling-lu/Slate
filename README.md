@@ -33,11 +33,58 @@ Every agent includes guardrails to enforce constraints and prevent look-ahead bi
 
 **Candidate fundamental factors:** value, profitability, growth and growth rate, price trend, volatility.
 
+### Status
+
+| Component | Status |
+|---|---|
+| Portfolio Construction Agent (`portfolio_agent/`) | Built and unit-tested (9 tests). Runs end to end on the provided panel with a placeholder signal. |
+| Signals Agent | In progress |
+| Devil's Advocate Agent | In progress. The portfolio agent already accepts its output, including the 0-3 objection score. |
+
+### How the agents connect
+
+Agents pass CSV or parquet files keyed on `permno` + `eom`, where `eom` is the month-end of the formation month t (information dated on or before `eom` only). Holdings are dated the 1st of month t+1.
+
+| File | Columns |
+|---|---|
+| Signals | `permno, eom, score` (+ optional `source, confidence, rationale, asof_date`) |
+| Devil's advocate | `permno, eom` + either `action` (`veto`/`haircut`/`pass`) and `severity`, or `objection_score` 0-3 (3 = veto, 2 = halve the bet, 0-1 = keep); optional `side, reason` |
+
+### Portfolio construction guardrails
+
+| Limit | Type | Value |
+|---|---|---|
+| Names (long + short) | Hard (mandate) | 100-500 |
+| Gross exposure | Hard (mandate) | ≤ 200%; internal target 190% |
+| Net exposure | Hard (mandate) | −50% to +50%; internal target 0% (dollar neutral) |
+| Ex-ante beta | Policy | within ±0.05 |
+| Net weight per GICS sector | Policy | within ±5% |
+| Position size | Policy | ≤ 0.75% of NAV |
+| One-way monthly turnover | Policy | ≤ 30% of NAV |
+| Universe | Policy | price ≥ $5 and daily dollar volume ≥ $2M; shorts ≥ $5M and no micro/nano caps |
+
+A hard-limit breach aborts the run and writes nothing. Policy limits relax one step at a time, and each step is logged, only when a month is otherwise infeasible. Inputs with forward-looking columns or information dated after `eom` are rejected. Details are in [`portfolio_agent/README.md`](portfolio_agent/README.md).
+
+## Quick start
+
+```bash
+pip install pandas numpy scipy pyarrow
+python -m unittest discover -s portfolio_agent/tests -t .
+python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" \
+    --signals inputs/signals.parquet --da inputs/devils_advocate.csv \
+    --tb3ms TB3MS.csv --sp500 sp500_monthly.csv --out output
+```
+
+The provided data files are not stored in this repo. Place them in `Provided Documents/`. `--demo-baseline` runs with a fixed momentum/quality/value placeholder instead of `--signals`.
+
 ## Outputs
 
-- `holdings.csv`: monthly long and short stock holdings, 01/2021 to 08/2026
-- `returns.csv`: monthly (or daily) total portfolio returns over the test period
-- Exposure report: average and maximum gross exposure, average and extreme net exposure, realised beta to the S&P 500
+- `holdings.csv`: monthly long and short stock holdings (Date, PERMNO, TICKER, COMPANY NAME, WEIGHT), 01/2021 to 08/2026
+- `portfolio_returns.csv`: monthly total portfolio returns over the test period, with benchmark, active return and market excess return
+- `guardrail_report.csv` and `guardrail_checks.csv`: per-month gross, net, names, turnover, ex-ante beta and pass/fail for every check
+- `trade_log.csv`: the reason for every trade
+- `summary.json`: return, risk, alpha/beta, exposure and turnover statistics
+- `labels_to_verify.csv`: holdings whose ticker or company name is not verified in-month and must be checked against an authoritative source
 
 ## Data
 
@@ -59,6 +106,13 @@ Preprocessing steps are implemented and documented in the code.
 
 Deck with appendix (PDF), holdings and returns CSVs, Python code, licence, team CVs.
 
+## AI Use Disclosure
+
+- **Code:** The portfolio construction agent (`portfolio_agent/`), its tests and its documentation were written with Claude Code (Anthropic's Claude models), directed and reviewed by the team member who owns that component. Other components: owners should add their own AI-tool use here.
+- **No LLM at run time in the portfolio agent:** It is deterministic (a linear program plus rule-based checks). It makes no model calls and never reads forward returns while forming weights, so it has no model-side look-ahead. Any LLM use in the Signals and Devil's Advocate agents is documented by their owners, with prompts and tool definitions in the deck appendix.
+- **Verification:** Every AI-written claim about performance is traceable to the backtest outputs. Backtest results are not evidence of future performance, and nothing in this repo is investment advice.
+- **Placeholders:** Results produced with `--demo-baseline` or without `--tb3ms` / `--sp500` use a placeholder signal and proxy benchmark or market series, and the output files label them as such. They are not the team's reported results.
+
 ## License
 
-See `LICENSE`.
+Per the challenge rules, the submission is public domain / free to use. No separate `LICENSE` file is required.

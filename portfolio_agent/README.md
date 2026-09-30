@@ -57,3 +57,8 @@ requires checking these against an authoritative source), `summary.json`.
 - Without `--tb3ms` / `--sp500`, benchmark and market are proxies and labelled as such in the outputs. Supply FRED TB3MS and S&P 500 returns for the final numbers.
 - Held names with no next-month return are assumed to earn 0 excess return (58 stock-months in the demo).
 - No LLM is called by this agent, and outcomes are only joined in `backtest.py` after all weights are final.
+
+## AI disclosure
+
+This package was written with Claude Code (Anthropic's Claude models) and reviewed by the component owner.
+It makes no LLM calls at run time. Demo results use a placeholder signal and are not the team's results.
