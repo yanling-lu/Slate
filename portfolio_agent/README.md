@@ -44,6 +44,11 @@ infeasible; the hard mandate never relaxes. `guardrails.py` re-checks the finish
 independently of the optimizer. Devil's-advocate `veto` blocks a name on that side;
 `haircut` shrinks its alpha and position cap by `1 - severity`.
 
+## Upstream spec and audit
+
+`SIGNALS_SPEC.md` defines the walk-forward schedule and the signals/manifest formats.
+`python -m portfolio_agent.audit` checks them for look-ahead (see the spec, section 7).
+
 ## Outputs
 
 `holdings.csv` (submission format), `portfolio_returns.csv`, `trade_log.csv` (reason for
