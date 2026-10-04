@@ -59,6 +59,19 @@ def monthly_returns(holdings: pd.DataFrame, monthly: pd.DataFrame, outcomes: pd.
     return out.reset_index()
 
 
+def position_pnl(holdings: pd.DataFrame, outcomes: pd.DataFrame, panel: pd.DataFrame,
+                 policy: Policy) -> pd.DataFrame:
+    """One row per held position: weight, realised next-month excess return, P&L
+    contribution (weight * return), and formation-month size / liquidity."""
+    h = holdings.merge(outcomes[["permno", "eom", OUTCOME_COL]], how="left",
+                       left_on=["PERMNO", "eom"], right_on=["permno", "eom"]).drop(columns="permno")
+    h = h.merge(panel[["permno", "eom", "me", "prc", "dolvol_126d", "size_grp"]], how="left",
+                left_on=["PERMNO", "eom"], right_on=["permno", "eom"]).drop(columns="permno")
+    h["return_missing"] = h[OUTCOME_COL].isna()
+    h["pnl"] = h["WEIGHT"] * h[OUTCOME_COL].fillna(policy.missing_return_fill)
+    return h
+
+
 def summary(returns: pd.DataFrame, monthly: pd.DataFrame, holdings: pd.DataFrame,
             panel: pd.DataFrame) -> dict:
     r = returns.dropna(subset=["total_return"])
