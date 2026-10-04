@@ -38,6 +38,7 @@ Every agent includes guardrails to enforce constraints and prevent look-ahead bi
 | Component | Status |
 |---|---|
 | Portfolio Construction Agent (`portfolio_agent/`) | Built and unit-tested (9 tests). Runs end to end on the provided panel with a placeholder signal. |
+| Dense base signal (`base_signal/`) | Built. Walk-forward ridge on the 147 characteristics (shortlist 20, then 7, mixtures chosen on validation). Passes the look-ahead audit and truncation test. Weak out of sample: test rank IC 0.037, OOS R2 slightly negative. |
 | Signals Agent | In progress |
 | Devil's Advocate Agent | In progress. The portfolio agent already accepts its output, including the 0-3 objection score. |
 
@@ -90,6 +91,17 @@ python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names
 ```
 
 The provided data files are not stored in this repo. Place them in `Provided Documents/`. `--demo-baseline` runs with a fixed momentum/quality/value placeholder instead of `--signals`.
+
+## Deck report pack (`report/`)
+
+```bash
+python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" --signals out_base/signals.parquet --out output_base
+python -m report.build --run-dir output_base --out report_out     # downloads TB3MS and S&P 500 from FRED (no key)
+```
+
+Writes 10 charts, the required statistics tables, the top-10 holdings and P&L contributors (ticker and company name, with a flag
+for labels that need verification) and `methodology.md`. The S&P 500 appears only as grey context, as the challenge requires; the
+benchmark is TB3MS + 4%. Needs only pandas, numpy and matplotlib: it reads the run's CSVs, not the parquet files.
 
 ## Outputs
 

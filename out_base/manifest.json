@@ -1,0 +1,382 @@
+{
+  "model": "ridge on rank-transformed characteristics, walk-forward",
+  "universe": "price >= 5, 126d dollar volume >= 2e6, size_grp in mega/large/small (formation month)",
+  "preprocessing": "within-month rank to [-0.5,0.5]; missing=0; target clipped 1/99 pct of fitting rows",
+  "years": [
+    {
+      "year": 2021,
+      "train_target_end": "2018-12-31",
+      "selection_window": "validation",
+      "fit_data_end": "2020-12-31",
+      "feature_selection_data_end": "2020-12-31",
+      "characteristics": [
+        "kz_index",
+        "qmj_prof",
+        "mispricing_perf"
+      ],
+      "events": [],
+      "shortlist_7_ranked": [
+        "kz_index",
+        "qmj_prof",
+        "mispricing_perf",
+        "rmax5_21d",
+        "ivol_capm_252d",
+        "rvol_21d",
+        "zero_trades_126d"
+      ],
+      "shortlist_20": [
+        "rmax5_21d",
+        "ivol_capm_252d",
+        "rvol_21d",
+        "zero_trades_126d",
+        "turnover_126d",
+        "ivol_ff3_21d",
+        "zero_trades_252d",
+        "ivol_capm_21d",
+        "ivol_hxz4_21d",
+        "betabab_1260d",
+        "rmax1_21d",
+        "qmj_safety",
+        "bidaskhl_21d",
+        "zero_trades_21d",
+        "kz_index",
+        "niq_at",
+        "mispricing_perf",
+        "ebit_sale",
+        "ebit_bev",
+        "qmj_prof"
+      ],
+      "mixtures_tried": 99,
+      "val_metric": {
+        "name": "mean_monthly_rank_ic",
+        "value": 0.00722
+      },
+      "coefficients": {
+        "kz_index": -0.004461,
+        "qmj_prof": 0.001822,
+        "mispricing_perf": 0.001932
+      },
+      "test_rank_ic": 0.0415,
+      "oos_r2_test": 0.00539
+    },
+    {
+      "year": 2022,
+      "train_target_end": "2019-12-31",
+      "selection_window": "validation",
+      "fit_data_end": "2021-12-31",
+      "feature_selection_data_end": "2021-12-31",
+      "characteristics": [
+        "corr_1260d",
+        "niq_at",
+        "niq_be"
+      ],
+      "events": [],
+      "shortlist_7_ranked": [
+        "corr_1260d",
+        "niq_at",
+        "bidaskhl_21d",
+        "ivol_ff3_21d",
+        "ivol_hxz4_21d",
+        "niq_be",
+        "ivol_capm_21d"
+      ],
+      "shortlist_20": [
+        "ivol_capm_252d",
+        "rmax5_21d",
+        "ivol_ff3_21d",
+        "seas_1_1an",
+        "ivol_hxz4_21d",
+        "ivol_capm_21d",
+        "zero_trades_126d",
+        "turnover_126d",
+        "zero_trades_252d",
+        "rmax1_21d",
+        "ret_1_0",
+        "rvol_21d",
+        "bidaskhl_21d",
+        "corr_1260d",
+        "kz_index",
+        "niq_be",
+        "niq_at",
+        "zero_trades_21d",
+        "tangibility",
+        "ebit_sale"
+      ],
+      "mixtures_tried": 99,
+      "val_metric": {
+        "name": "mean_monthly_rank_ic",
+        "value": 0.05761
+      },
+      "coefficients": {
+        "corr_1260d": 0.006522,
+        "niq_at": 0.008194,
+        "niq_be": -0.001859
+      },
+      "test_rank_ic": 0.0669,
+      "oos_r2_test": -0.0221
+    },
+    {
+      "year": 2023,
+      "train_target_end": "2020-12-31",
+      "selection_window": "validation",
+      "fit_data_end": "2022-12-31",
+      "feature_selection_data_end": "2022-12-31",
+      "characteristics": [
+        "rmax5_21d",
+        "corr_1260d",
+        "prc"
+      ],
+      "events": [],
+      "shortlist_7_ranked": [
+        "ivol_ff3_21d",
+        "rmax5_21d",
+        "corr_1260d",
+        "prc",
+        "tangibility",
+        "gp_at",
+        "aliq_mat"
+      ],
+      "shortlist_20": [
+        "aliq_mat",
+        "ret_60_12",
+        "gp_atl1",
+        "seas_2_5na",
+        "bev_mev",
+        "gp_at",
+        "corr_1260d",
+        "be_me",
+        "at_me",
+        "rmax5_21d",
+        "ret_1_0",
+        "z_score",
+        "kz_index",
+        "cash_at",
+        "tangibility",
+        "seas_1_1an",
+        "ivol_ff3_21d",
+        "netdebt_me",
+        "ocf_me",
+        "prc"
+      ],
+      "mixtures_tried": 99,
+      "val_metric": {
+        "name": "mean_monthly_rank_ic",
+        "value": 0.10435
+      },
+      "coefficients": {
+        "rmax5_21d": -0.011837,
+        "corr_1260d": 0.004307,
+        "prc": 0.001167
+      },
+      "test_rank_ic": 0.0047,
+      "oos_r2_test": 0.00349
+    },
+    {
+      "year": 2024,
+      "train_target_end": "2021-12-31",
+      "selection_window": "validation",
+      "fit_data_end": "2023-12-31",
+      "feature_selection_data_end": "2023-12-31",
+      "characteristics": [
+        "ivol_ff3_21d",
+        "bidaskhl_21d",
+        "fcf_me"
+      ],
+      "events": [],
+      "shortlist_7_ranked": [
+        "ivol_capm_252d",
+        "ivol_ff3_21d",
+        "ivol_capm_21d",
+        "rvol_21d",
+        "ivol_hxz4_21d",
+        "bidaskhl_21d",
+        "fcf_me"
+      ],
+      "shortlist_20": [
+        "ivol_ff3_21d",
+        "rmax5_21d",
+        "ivol_hxz4_21d",
+        "ivol_capm_21d",
+        "corr_1260d",
+        "bidaskhl_21d",
+        "niq_at",
+        "rvol_21d",
+        "qmj_prof",
+        "ivol_capm_252d",
+        "niq_be",
+        "rmax1_21d",
+        "mispricing_perf",
+        "eqnetis_at",
+        "fcf_me",
+        "gp_at",
+        "ebit_bev",
+        "tangibility",
+        "gp_atl1",
+        "ocf_at"
+      ],
+      "mixtures_tried": 99,
+      "val_metric": {
+        "name": "mean_monthly_rank_ic",
+        "value": 0.07894
+      },
+      "coefficients": {
+        "ivol_ff3_21d": -0.005717,
+        "bidaskhl_21d": -0.00433,
+        "fcf_me": 0.00802
+      },
+      "test_rank_ic": 0.0727,
+      "oos_r2_test": 0.00284
+    },
+    {
+      "year": 2025,
+      "train_target_end": "2022-12-31",
+      "selection_window": "validation",
+      "fit_data_end": "2024-12-31",
+      "feature_selection_data_end": "2024-12-31",
+      "characteristics": [
+        "corr_1260d",
+        "ebit_bev",
+        "niq_be"
+      ],
+      "events": [],
+      "shortlist_7_ranked": [
+        "corr_1260d",
+        "ebit_bev",
+        "ivol_capm_21d",
+        "niq_be",
+        "ivol_ff3_21d",
+        "ivol_hxz4_21d",
+        "fcf_me"
+      ],
+      "shortlist_20": [
+        "rmax5_21d",
+        "ivol_ff3_21d",
+        "ivol_capm_21d",
+        "rvol_21d",
+        "ivol_hxz4_21d",
+        "bidaskhl_21d",
+        "ivol_capm_252d",
+        "rmax1_21d",
+        "niq_at",
+        "niq_be",
+        "fcf_me",
+        "mispricing_perf",
+        "eqnetis_at",
+        "eqnpo_me",
+        "corr_1260d",
+        "ebit_bev",
+        "chcsho_12m",
+        "ebit_sale",
+        "qmj_prof",
+        "eqpo_me"
+      ],
+      "mixtures_tried": 99,
+      "val_metric": {
+        "name": "mean_monthly_rank_ic",
+        "value": 0.06378
+      },
+      "coefficients": {
+        "corr_1260d": 0.006833,
+        "ebit_bev": 0.00421,
+        "niq_be": 0.005661
+      },
+      "test_rank_ic": 0.0177,
+      "oos_r2_test": 0.00068
+    },
+    {
+      "year": 2026,
+      "train_target_end": "2023-12-31",
+      "selection_window": "validation",
+      "fit_data_end": "2025-12-31",
+      "feature_selection_data_end": "2025-12-31",
+      "characteristics": [
+        "ivol_capm_21d",
+        "bidaskhl_21d",
+        "rvol_21d",
+        "ebit_bev"
+      ],
+      "events": [],
+      "shortlist_7_ranked": [
+        "ivol_capm_21d",
+        "ivol_ff3_21d",
+        "ivol_hxz4_21d",
+        "ivol_capm_252d",
+        "bidaskhl_21d",
+        "rvol_21d",
+        "ebit_bev"
+      ],
+      "shortlist_20": [
+        "ivol_ff3_21d",
+        "ivol_hxz4_21d",
+        "rmax5_21d",
+        "ivol_capm_21d",
+        "bidaskhl_21d",
+        "ivol_capm_252d",
+        "rvol_21d",
+        "corr_1260d",
+        "niq_at",
+        "fcf_me",
+        "eqnetis_at",
+        "eqnpo_me",
+        "niq_be",
+        "ebit_bev",
+        "rmax1_21d",
+        "mispricing_perf",
+        "chcsho_12m",
+        "eqpo_me",
+        "qmj_prof",
+        "ni_be"
+      ],
+      "mixtures_tried": 99,
+      "val_metric": {
+        "name": "mean_monthly_rank_ic",
+        "value": 0.05313
+      },
+      "coefficients": {
+        "ivol_capm_21d": -0.010439,
+        "bidaskhl_21d": -0.004111,
+        "rvol_21d": 0.006441,
+        "ebit_bev": 0.005752
+      },
+      "test_rank_ic": 0.0058,
+      "oos_r2_test": 0.00679
+    }
+  ],
+  "oos_report": {
+    "2021": {
+      "rank_ic": 0.0415,
+      "oos_r2": 0.00539,
+      "stock_months": 25005
+    },
+    "2022": {
+      "rank_ic": 0.0669,
+      "oos_r2": -0.0221,
+      "stock_months": 25262
+    },
+    "2023": {
+      "rank_ic": 0.0047,
+      "oos_r2": 0.00349,
+      "stock_months": 23103
+    },
+    "2024": {
+      "rank_ic": 0.0727,
+      "oos_r2": 0.00284,
+      "stock_months": 21729
+    },
+    "2025": {
+      "rank_ic": 0.0177,
+      "oos_r2": 0.00068,
+      "stock_months": 21332
+    },
+    "2026": {
+      "rank_ic": 0.0058,
+      "oos_r2": 0.00679,
+      "stock_months": 14116
+    },
+    "all": {
+      "rank_ic": 0.0366,
+      "oos_r2": -0.00114,
+      "stock_months": 130547
+    }
+  }
+}
