@@ -4,3 +4,4 @@ __pycache__/
 output*/
 .envout_base/
 report_out/
+.env
