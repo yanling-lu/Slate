@@ -38,6 +38,7 @@ Every agent includes guardrails to enforce constraints and prevent look-ahead bi
 | Component | Status |
 |---|---|
 | Portfolio Construction Agent (`portfolio_agent/`) | Built and unit-tested (9 tests). Runs end to end on the provided panel with a placeholder signal. |
+| Dense base signal (`base_signal/`) | Built. Walk-forward ridge on the 147 characteristics (shortlist 20, then 7, mixtures chosen on validation). Passes the look-ahead audit and truncation test. Weak out of sample: test rank IC 0.037, OOS R2 slightly negative. |
 | Signals Agent | In progress |
 | Devil's Advocate Agent | In progress. The portfolio agent already accepts its output, including the 0-3 objection score. |
 
