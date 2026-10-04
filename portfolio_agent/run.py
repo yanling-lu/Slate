@@ -16,7 +16,7 @@ import pandas as pd
 from pandas.tseries.offsets import MonthEnd
 
 from .agent import PortfolioConstructionAgent
-from .backtest import monthly_returns, summary
+from .backtest import monthly_returns, position_pnl, summary
 from .config import Mandate, Policy
 from .contracts import read_table
 from .data import load_outcomes, load_panel, month_end, rf_by_month
@@ -73,7 +73,8 @@ def main(argv=None):
     last = pd.Timestamp(a.end) + MonthEnd(0) - MonthEnd(1)
     res = agent.run(signals, da, first, last)
 
-    rets = monthly_returns(res.holdings, res.monthly, load_outcomes(a.panel), rf_by_month(panel),
+    outcomes = load_outcomes(a.panel)
+    rets = monthly_returns(res.holdings, res.monthly, outcomes, rf_by_month(panel),
                            policy, _fred(a.tb3ms) if a.tb3ms else None,
                            _fred(a.sp500) if a.sp500 else None)
     stats = summary(rets, res.monthly, res.holdings, panel)
@@ -82,6 +83,8 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     sub = ["Date", "PERMNO", "TICKER", "COMPANY NAME", "WEIGHT"]
     res.holdings[sub].to_csv(out / "holdings.csv", index=False, date_format="%Y-%m-%d")
+    position_pnl(res.holdings, outcomes, panel, policy).to_csv(
+        out / "position_pnl.csv", index=False, date_format="%Y-%m-%d")
     rets.to_csv(out / "portfolio_returns.csv", index=False, date_format="%Y-%m-%d")
     res.trades.to_csv(out / "trade_log.csv", index=False, date_format="%Y-%m-%d")
     res.monthly.to_csv(out / "guardrail_report.csv", index=False, date_format="%Y-%m-%d")

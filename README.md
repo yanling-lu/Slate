@@ -92,6 +92,17 @@ python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names
 
 The provided data files are not stored in this repo. Place them in `Provided Documents/`. `--demo-baseline` runs with a fixed momentum/quality/value placeholder instead of `--signals`.
 
+## Deck report pack (`report/`)
+
+```bash
+python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" --signals out_base/signals.parquet --out output_base
+python -m report.build --run-dir output_base --out report_out     # downloads TB3MS and S&P 500 from FRED (no key)
+```
+
+Writes 10 charts, the required statistics tables, the top-10 holdings and P&L contributors (ticker and company name, with a flag
+for labels that need verification) and `methodology.md`. The S&P 500 appears only as grey context, as the challenge requires; the
+benchmark is TB3MS + 4%. Needs only pandas, numpy and matplotlib: it reads the run's CSVs, not the parquet files.
+
 ## Outputs
 
 - `holdings.csv`: monthly long and short stock holdings (Date, PERMNO, TICKER, COMPANY NAME, WEIGHT), 01/2021 to 08/2026
