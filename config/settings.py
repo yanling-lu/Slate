@@ -101,3 +101,20 @@ def devil_system_prompt() -> str:
 @lru_cache(maxsize=1)
 def portfolio_system_prompt() -> str:
     return _unfold(_require("PORTFOLIO_SYSTEM_PROMPT"))
+
+@lru_cache(maxsize=1)
+def instruction_first_pass() -> str:
+    return _get("INSTRUCTION_FIRST_PASS", "FIRST PASS. Produce the initial signal.")
+
+
+@lru_cache(maxsize=1)
+def instruction_revision_pass() -> str:
+    return _get(
+        "INSTRUCTION_REVISION_PASS",
+        "REVISION PASS. Address every item in revision_requests with concrete "
+        "evidence from the filings shown. Use only the characteristics listed "
+        "in kept_characteristics and only filings whose item_codes appear in "
+        "kept_event_types. Fill addressed_revision_requests[] with the "
+        "requests you addressed. If a request cannot be addressed with "
+        "available evidence, downgrade to neutral with insufficient_evidence=true.",
+    )

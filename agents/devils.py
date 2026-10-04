@@ -50,7 +50,7 @@ KEEP_CHARACTERISTICS = 7
 KEEP_EVENT_TYPES = 3
 COUNTER_TYPES = {"confound", "crowding", "base_rate", "adversarial_filing", "timing", "structural"}
 SEVERITY_BY_SCORE = {0: "low", 1: "low", 2: "medium", 3: "high"}
-RECOMMENDATION_BY_SCORE = {0: "proceed", 1: "proceed", 2: "revise", 3: "reject"}
+RECOMMENDATION_BY_SCORE = {0: "proceed", 1: "revise", 2: "reject"}
 
 DEFAULT_PROMPT = """You are a skeptical risk analyst (the devil's advocate) on an investment team.
 A signal analyst has proposed a stock trade. Your job is to find the strongest reasons

@@ -1,11 +1,9 @@
-# schemas/models.py
 from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
 from typing import Literal, Optional, Union
 from datetime import date
 
 
-# ---------- Evidence ----------
 class FilingEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["filing"] = "filing"
@@ -28,14 +26,23 @@ class CharacteristicEvidence(BaseModel):
 Evidence = Union[FilingEvidence, CharacteristicEvidence]
 
 
-# ---------- Signal ----------
 class Signal(BaseModel):
+    """
+    One signal per (permno, as_of_date). Sentiment-driven.
+    Sentiment scale: -3 (very bearish) to +3 (very bullish), continuous.
+    Long/short buckets are derived from sentiment:
+      - sentiment >= +0.5  -> direction = "long"
+      - sentiment <= -0.5  -> direction = "short"
+      - otherwise          -> direction = "neutral"
+    """
     model_config = ConfigDict(extra="forbid")
     permno: int
     ticker: str
     as_of_date: date
-    document_id: Optional[str] = None       # null for characteristic-only
+    sentiment: float = Field(..., ge=-3.0, le=3.0)
+    document_id: Optional[str] = None
     direction: Literal["long", "short", "neutral"]
+    source: Literal["filing_8k", "characteristics", "both"] = "characteristics"
     score: float = Field(..., ge=-2.0, le=2.0)
     confidence: float = Field(..., ge=0.0, le=1.0)
     catalyst: str
@@ -45,7 +52,8 @@ class Signal(BaseModel):
     alternative_interpretations: list[str] = []
     injection_attempts: list[str] = []
     insufficient_evidence: bool = False
-    revision_round: int = 0                 # incremented each time Devil asks for revise
+    revision_round: int = 0
+    addressed_revision_requests: list[str] = []
 
     @field_validator("evidence")
     @classmethod
@@ -70,11 +78,10 @@ class Signal(BaseModel):
 class SignalBatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     as_of_date: date
-    signals: list[Signal]
+    signals: list[Signal] = []
     audit_trail: list[dict] = []
 
 
-# ---------- Devil's Advocate ----------
 class Counterargument(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal[
@@ -87,29 +94,26 @@ class Counterargument(BaseModel):
 
 
 class Challenge(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")   # Devil adds extra keys post-validation
     permno: int
     ticker: str
-    signal_id: str                          # hash of original signal
+    signal_id: str
     resilience_score: float = Field(..., ge=0.0, le=1.0)
     recommendation: Literal["proceed", "revise", "reject"]
     counterarguments: list[Counterargument]
     residual_uncertainties: list[str] = []
     round: int = 0
+    objection_score: int = Field(0, ge=0, le=3)
+    revision_requests: list[str] = []
+    kept_characteristics: list[dict] = []
+    kept_event_types: list[dict] = []
 
 
-class ChallengeBatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    as_of_date: date
-    challenges: list[Challenge]
-
-
-# ---------- Portfolio ----------
 class Position(BaseModel):
     model_config = ConfigDict(extra="forbid")
     permno: int
     ticker: str
-    weight: float = Field(..., ge=-0.05, le=0.05)   # signed fraction of NAV
+    weight: float = Field(..., ge=-0.05, le=0.05)
 
 
 class PortfolioTarget(BaseModel):
