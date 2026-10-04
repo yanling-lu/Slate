@@ -1,277 +1,301 @@
-"""Portfolio-construction agent.
+"""Pipeline-facing portfolio agent.
 
-Each month it runs the same loop: validate inputs -> drift last month's book ->
-combine signals and devil's-advocate verdicts into one alpha -> solve -> verify
-with the independent guardrails -> relax soft limits one step and retry if
-needed -> explain every trade. Decisions are deterministic: no LLM is called and
-no forward return is ever loaded here, so there is no model-side look-ahead.
+Adapts the deterministic engine in `portfolio_agent/` to the interfaces the rest of
+the pipeline uses: it takes the validated Signal batch and the Devil's Advocate
+challenges from the graph, and returns a `PortfolioTarget`-shaped dict.
+
+    run(validated_signals: dict, challenges: list, as_of_date: str) -> dict
+
+How the pieces combine
+----------------------
+* The LLM Signal Agent is event-driven and sparse (only stocks with a filing that
+  month). A 100-500 name market-neutral book needs a dense cross-section, so the
+  agent combines two sources: a dense base signal (the characteristics model, loaded
+  from BASE_SIGNALS_PATH) and the sparse `signal_agent` source.
+* Devil's Advocate challenges become per-stock vetoes / haircuts:
+  reject -> veto, revise -> haircut (severity = 1 - resilience_score, 0.25-0.9),
+  proceed -> no change. A numeric `objection_score` 0-3 is also understood.
+* The agent makes no LLM calls. `model` is accepted for interface compatibility only.
+* Month-by-month state: the graph is invoked per stock, so signals for the same month
+  accumulate across calls and each call returns the book built from everything seen so
+  far. The month is committed (becomes the "previous book" for turnover) when a later
+  month is requested. Months must be requested in order with no gaps.
+
+Environment: CHARS_PATH (panel, default data/chars_final_with_names.parquet),
+BASE_SIGNALS_PATH (dense signals csv/parquet), PORTFOLIO_DEMO_BASELINE=1 to use the
+fixed momentum/quality/value placeholder instead (labelled, not the strategy).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import MonthEnd
 
-from portfolio_agent.config import RELAX_LADDER, Mandate, Policy
-from portfolio_agent.contracts import ContractError, validate_da, validate_signals
-from portfolio_agent.data import OUTCOME_COL
-from portfolio_agent.guardrails import MandateViolation, check_portfolio, enforce, hard_failures
-from portfolio_agent.optimizer import EPS, solve
+from portfolio_agent.agent import PortfolioConstructionAgent  # noqa: F401  (re-export)
+from portfolio_agent.agent import Rebalance
+from portfolio_agent.config import Mandate, Policy
+from portfolio_agent.contracts import (OBJECTION_MAP, ContractError, read_table, validate_da,
+                                       validate_signals)
+from portfolio_agent.data import load_panel, prepare_panel
+
+LLM_SOURCE = "signal_agent"
+SIG_COLS = ["permno", "eom", "source", "score", "confidence", "rationale", "asof_date"]
+DA_COLS = ["permno", "eom", "action", "severity", "side", "reason"]
+ACTION_RANK = {"pass": 0, "haircut": 1, "veto": 2}
 
 
-@dataclass
-class Rebalance:
-    eom: pd.Timestamp
-    weights: pd.Series        # post-trade, non-zero names
-    pre_trade: pd.Series      # drifted weights of names still in the panel
-    trades: pd.DataFrame
-    checks: list
-    diagnostics: dict
+def _get(obj, key, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 
-@dataclass
-class RunResult:
-    holdings: pd.DataFrame    # submission format + eom, label_status
-    trades: pd.DataFrame
-    monthly: pd.DataFrame     # one row of diagnostics per rebalance
-    checks: pd.DataFrame      # every guardrail check, every month
+def to_eom(as_of_date) -> pd.Timestamp:
+    """Formation month-end. Rejects mid-month dates: characteristics are month-end
+    snapshots, so a mid-month cutoff would let later information in."""
+    ts = pd.Timestamp(as_of_date).normalize()
+    if ts.day < 28:
+        raise ContractError(
+            f"as_of_date {ts.date()} is mid-month; the portfolio forms on month-end "
+            "information (use the last trading day of the month)")
+    return ts + MonthEnd(0)
 
 
-class PortfolioConstructionAgent:
-    def __init__(self, panel: pd.DataFrame, mandate: Mandate | None = None,
-                 policy: Policy | None = None):
-        if OUTCOME_COL in panel.columns:
-            raise ContractError(f"panel passed to the agent must not contain {OUTCOME_COL}")
-        self.mandate = mandate or Mandate()
-        self.policy = policy or Policy()
-        self.policy.validate(self.mandate)
-        self.by_month = {t: g.set_index("permno") for t, g in panel.groupby("eom")}
+def signals_to_frame(batch, eom: pd.Timestamp) -> pd.DataFrame:
+    """Signal batch -> one row per permno for source `signal_agent`.
 
-    # ------------------------------------------------------------------ alpha
-    def _book(self, rows: pd.DataFrame, sig: pd.DataFrame, da: pd.DataFrame) -> pd.DataFrame:
-        p = self.policy
-        book = pd.DataFrame(index=rows.index)
-        book["sector"] = rows["sector"]
-        liquid = (rows["prc"] >= p.min_price) & (rows["dolvol_126d"] >= p.min_dolvol)
-        book["elig"] = liquid & rows["size_grp"].isin(p.size_groups)
-        book["elig_short"] = (book["elig"] & rows["size_grp"].isin(p.short_size_groups)
-                              & (rows["dolvol_126d"] >= p.short_min_dolvol))
-        beta = rows["beta_60m"]
-        book["beta_imputed"] = beta.isna()
-        med = beta[book["elig"]].median()
-        book["beta"] = beta.fillna(1.0 if np.isnan(med) else med)
+    Neutral and insufficient-evidence signals are dropped (no row = no view). Several
+    signals for one stock are merged: score = confidence-weighted mean, confidence = max.
+    The model's own `ticker` is ignored; labels come from the panel."""
+    batch_asof = _get(batch, "as_of_date")
+    if batch_asof is not None and pd.Timestamp(batch_asof) > eom:
+        raise ContractError(f"signal batch dated {batch_asof} is after formation month-end {eom.date()}")
+    rows = []
+    for s in _get(batch, "signals", None) or []:
+        if _get(s, "insufficient_evidence", False) or _get(s, "direction") == "neutral":
+            continue
+        asof = pd.Timestamp(_get(s, "as_of_date", eom))
+        if asof > eom:
+            raise ContractError(f"signal for permno {_get(s, 'permno')} is dated {asof.date()}, "
+                                f"after formation month-end {eom.date()}")
+        catalyst, why = _get(s, "catalyst", ""), _get(s, "rationale", "")
+        rows.append({"permno": int(_get(s, "permno")), "score": float(_get(s, "score")),
+                     "confidence": float(_get(s, "confidence", 1.0)),
+                     "rationale": f"{catalyst}: {why}".strip(": "), "asof_date": asof})
+    if not rows:
+        return pd.DataFrame(columns=SIG_COLS)
+    merged = []
+    for permno, g in pd.DataFrame(rows).groupby("permno"):
+        w = g["confidence"].sum()
+        score = (g["score"] * g["confidence"]).sum() / w if w > 0 else g["score"].mean()
+        merged.append({"permno": permno, "score": score, "confidence": g["confidence"].max(),
+                       "rationale": " | ".join(g["rationale"])[:300],
+                       "asof_date": g["asof_date"].max()})
+    out = pd.DataFrame(merged)
+    out["eom"], out["source"] = eom, LLM_SOURCE
+    return out[SIG_COLS]
 
-        universe = book.index[book["elig"]]
-        sig = sig[sig["permno"].isin(universe)]
-        total, weight_sum = pd.Series(0.0, index=universe), 0.0
-        scored = pd.Series(False, index=universe)
-        self._sources = sorted(sig["source"].unique())
-        for src in self._sources:
-            s = sig[sig["source"] == src].set_index("permno")
-            sd = s["score"].std(ddof=0)
-            z = (s["score"] - s["score"].mean()) / sd if sd > 0 else s["score"] * 0.0
-            z = (z.clip(-p.winsor_z, p.winsor_z) * s["confidence"]).reindex(universe)
-            book["z_" + src] = z
-            wt = p.source_weights.get(src, 1.0)
-            total += wt * z.fillna(0.0)      # no view from a source = neutral
-            weight_sum += wt
-            scored |= z.notna()
-        alpha = (total / weight_sum).where(scored) if weight_sum else total.where(scored)
-        if p.sector_neutral_alpha:
-            alpha = alpha - alpha.groupby(book.loc[universe, "sector"]).transform("mean")
-        sd = alpha.std(ddof=0)
-        book["alpha_raw"] = alpha / sd if sd and sd > 0 else alpha
-        notes = sig[sig["rationale"] != ""].groupby("permno")["rationale"].agg(" | ".join)
-        book["signal_note"] = notes.reindex(book.index).fillna("").str.slice(0, 300)
 
-        da = da.set_index("permno").reindex(book.index)
-        book["da_action"] = da["action"].fillna("pass")
-        book["da_reason"] = da["reason"].fillna("")
-        side, veto = da["side"].fillna("both"), book["da_action"] == "veto"
-        book["veto_long"] = veto & side.isin(["long", "both"])
-        book["veto_short"] = veto & side.isin(["short", "both"])
-        raw = book["alpha_raw"]
-        hit = (book["da_action"] == "haircut") & (
-            (side == "both") | ((side == "long") & (raw > 0)) | ((side == "short") & (raw < 0)))
-        severity = pd.to_numeric(da["severity"]).fillna(0.0).astype(float)
-        book["cap_mult"] = np.where(hit, 1.0 - severity, 1.0)
-        book["alpha"] = raw * book["cap_mult"]
-        book["rank_long"] = book["alpha"].rank(ascending=False)
-        book["rank_short"] = book["alpha"].rank(ascending=True)
-        return book
-
-    # -------------------------------------------------------------- rebalance
-    def rebalance(self, eom, signals_t: pd.DataFrame, da_t: pd.DataFrame,
-                  prev: pd.Series | None = None) -> Rebalance:
-        p, m = self.policy, self.mandate
-        eom = pd.Timestamp(eom)
-        rows = self.by_month[eom]
-        book = self._book(rows, signals_t, da_t)
-        first = prev is None or len(prev) == 0
-
-        # Drift last month's weights with the return just realised (month t).
-        if first:
-            w0, gone = pd.Series(dtype=float), pd.Series(dtype=float)
+def challenges_to_da(challenges, batch, eom: pd.Timestamp) -> pd.DataFrame:
+    """Devil's Advocate challenges -> the portfolio agent's objection table."""
+    side_of = {}
+    for s in _get(batch, "signals", None) or []:
+        d = _get(s, "direction")
+        p = int(_get(s, "permno"))
+        side = d if d in ("long", "short") else "both"
+        side_of[p] = side if side_of.get(p, side) == side else "both"
+    best: dict[int, dict] = {}
+    for c in challenges or []:
+        permno = int(_get(c, "permno"))
+        score = _get(c, "objection_score")
+        if score is not None:
+            if int(score) not in OBJECTION_MAP:
+                raise ContractError(f"objection_score must be 0-3, got {score}")
+            action, severity = OBJECTION_MAP[int(score)]
         else:
-            here = prev.index.intersection(rows.index)
-            gone = prev.drop(here)                      # delisted / left the panel
-            rf = float((rows["ret"] - rows["ret_exc"]).median())
-            exc = rows["ret_exc"].reindex(prev.index).fillna(p.missing_return_fill)
-            port_ret = rf + float((prev * exc).sum())
-            w0 = prev[here] * (1.0 + rows.loc[here, "ret"].fillna(0.0)) / (1.0 + port_ret)
-        forced = float(gone.abs().sum())
+            rec = _get(c, "recommendation", "proceed")
+            if rec == "reject":
+                action, severity = "veto", 1.0
+            elif rec == "revise":
+                res = float(_get(c, "resilience_score", 0.5))
+                action, severity = "haircut", float(np.clip(1.0 - res, 0.25, 0.9))
+            else:
+                action, severity = "pass", 0.0
+        claims = "; ".join(str(_get(x, "claim", "")) for x in (_get(c, "counterarguments", []) or []))
+        row = {"permno": permno, "eom": eom, "action": action, "severity": severity,
+               "side": side_of.get(permno, "both"),
+               "reason": (f"{_get(c, 'recommendation', '')}: {claims}".strip(": "))[:300]}
+        old = best.get(permno)
+        if old is None or (ACTION_RANK[action], severity) >= (ACTION_RANK[old["action"]], old["severity"]):
+            best[permno] = row                       # most severe objection wins; later calls win ties
+    return pd.DataFrame(list(best.values()), columns=DA_COLS)
 
-        cap = p.max_weight * book["cap_mult"]
-        alpha = book["alpha"]
-        held = w0.reindex(book.index).fillna(0.0)
-        ub_long = np.where(book["elig"] & (alpha > 0), cap, 0.0)
-        ub_long = np.where(held > 0, np.where(book["elig"], cap, np.minimum(cap, held)), ub_long)
-        ub_long = np.where(book["veto_long"], 0.0, ub_long)
-        ub_short = np.where(book["elig_short"] & (alpha < 0), cap, 0.0)
-        # A short that fails the borrow/liquidity screen must be covered, not grandfathered.
-        ub_short = np.where(held < 0, np.where(book["elig_short"], cap, 0.0), ub_short)
-        ub_short = np.where(book["veto_short"], 0.0, ub_short)
 
-        use = (ub_long > 0) | (ub_short > 0) | (held.values != 0)
-        idx = book.index[use]
-        args = (alpha[idx].fillna(0.0).values, held[idx].values, ub_long[use], ub_short[use],
-                book.loc[idx, "beta"].values, book.loc[idx, "sector"].values)
+def _clean(v):
+    if isinstance(v, (pd.Timestamp,)):
+        return v.date().isoformat()
+    if isinstance(v, (np.floating, float)):
+        return None if not np.isfinite(v) else float(v)
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, (np.bool_,)):
+        return bool(v)
+    return v
 
-        chosen = None
-        for level, relax in enumerate(RELAX_LADDER):
-            to_mult = relax.get("turnover", 1.0)
-            budget = None if (first or to_mult is None) else 2 * p.max_turnover * to_mult - forced
-            x = solve(*args, gross_max=p.gross_target,
-                      net_lo=p.net_target - p.net_band, net_hi=p.net_target + p.net_band,
-                      beta_tol=p.beta_tol * relax.get("beta", 1.0),
-                      sector_tol=p.sector_tol * relax.get("sector", 1.0),
-                      turnover_two_way=budget, trade_penalty=p.trade_penalty)
-            if x is None:
-                continue
-            w = pd.Series(x, index=idx)
-            w = w[w != 0]
-            turnover = None if first else 0.5 * (
-                float(w.reindex(idx).fillna(0.0).sub(held[idx]).abs().sum()) + forced)
-            checks = check_portfolio(w, m, p, beta=book["beta"], sector=book["sector"],
-                                     turnover=turnover, short_eligible=book["elig_short"])
-            if not hard_failures(checks):
-                chosen = (level, relax, w, turnover, checks)
-                break
-        if chosen is None:
-            raise MandateViolation(
-                f"{eom.date()}: no portfolio satisfies the mandate even with soft limits "
-                f"relaxed ({int(book['elig'].sum())} eligible names, "
-                f"{int(book['alpha'].notna().sum())} scored)")
-        level, relax, w, turnover, checks = chosen
-        enforce(checks, str(eom.date()))
 
-        diagnostics = {
-            "eom": eom, "date": eom + pd.Timedelta(days=1),
-            "n_long": int((w > 0).sum()), "n_short": int((w < 0).sum()),
-            "gross": float(w.abs().sum()), "net": float(w.sum()),
-            "long_exposure": float(w[w > 0].sum()), "short_exposure": float(w[w < 0].sum()),
-            "max_weight": float(w.abs().max()),
-            "top10_share": float(w.abs().nlargest(10).sum() / w.abs().sum()),
-            "turnover_one_way": turnover,
-            "forced_exit_weight": forced,
-            "relax_level": level,
-            "relaxations": ", ".join(f"{k} x{v}" if v else f"{k} off" for k, v in relax.items()),
-            "policy_breaches": ", ".join(c.name for c in checks if not c.ok),
-            "universe": int(book["elig"].sum()), "scored": int(book["alpha"].notna().sum()),
-            "vetoes": int((book["da_action"] == "veto").sum()),
-            "haircuts": int((book["da_action"] == "haircut").sum()),
-            "beta_imputed_weight": float(w[book.loc[w.index, "beta_imputed"]].abs().sum()),
+class PortfolioReconstructionAgent:
+    def __init__(self, model: str | None = None, panel=None, base_signals=None,
+                 mandate: Mandate | None = None, policy: Policy | None = None):
+        self.model = model                      # unused: this agent is deterministic
+        self.mandate = mandate or Mandate()
+        pol = policy or Policy()
+        fixed = {LLM_SOURCE: 1.0, **pol.fixed_scale_sources}
+        self.policy = replace(pol, fixed_scale_sources=fixed)
+        self._panel_arg, self._base_arg = panel, base_signals
+        self._engine = None
+        self._base_by_month: dict | None = None
+        self._cur: pd.Timestamp | None = None        # month being built
+        self._prev: pd.Series | None = None          # committed book from the previous month
+        self._prev_eom: pd.Timestamp | None = None
+        self._last: Rebalance | None = None          # result for the current month
+        self._sig: dict[int, dict] = {}
+        self._da: dict[int, dict] = {}
+        self._history: list[tuple[pd.Timestamp, Rebalance]] = []
+
+    # ------------------------------------------------------------------ setup
+    def _load(self):
+        if self._engine is not None:
+            return
+        panel = self._panel_arg
+        chars_path = os.environ.get("CHARS_PATH", "data/chars_final_with_names.parquet")
+        if panel is None:
+            panel = load_panel(chars_path)
+        elif isinstance(panel, (str, os.PathLike)):
+            panel = load_panel(panel)
+        elif "sector" not in panel.columns:
+            panel = prepare_panel(panel)
+        self._engine = PortfolioConstructionAgent(panel, self.mandate, self.policy)
+
+        base = self._base_arg
+        if base is None and os.environ.get("BASE_SIGNALS_PATH"):
+            base = read_table(os.environ["BASE_SIGNALS_PATH"])
+        if base is None and os.environ.get("PORTFOLIO_DEMO_BASELINE", "").lower() in ("1", "true", "yes"):
+            from portfolio_agent.run import demo_signals
+            base = demo_signals(chars_path)
+        elif isinstance(base, (str, os.PathLike)):
+            base = read_table(base)
+        if base is not None:
+            base = validate_signals(base)
+            if (base["source"] == LLM_SOURCE).any():
+                raise ContractError(f"base signals may not use the reserved source '{LLM_SOURCE}'")
+            self._base_by_month = {t: g for t, g in base.groupby("eom")}
+
+    # ------------------------------------------------------------- month state
+    def _roll(self, eom: pd.Timestamp):
+        if self._cur is None:
+            self._cur = eom
+            return
+        if eom == self._cur:
+            return
+        if eom < self._cur:
+            raise ContractError(f"months must be processed in order: {eom.date()} after {self._cur.date()}")
+        if self._last is not None:                   # commit the finished month
+            self._history.append((self._cur, self._last))
+            self._prev, self._prev_eom = self._last.weights, self._cur
+        if self._prev_eom is not None and eom != self._prev_eom + MonthEnd(1):
+            raise ContractError(f"gap in months: last completed {self._prev_eom.date()}, "
+                                f"requested {eom.date()}; turnover needs consecutive months")
+        self._cur, self._last, self._sig, self._da = eom, None, {}, {}
+
+    # ------------------------------------------------------------------ public
+    def run(self, validated_signals, challenges, as_of_date) -> dict:
+        eom = to_eom(as_of_date)
+        self._roll(eom)
+        for _, r in signals_to_frame(validated_signals, eom).iterrows():
+            self._sig[int(r["permno"])] = r.to_dict()          # a revision replaces the earlier signal
+        for _, r in challenges_to_da(challenges, validated_signals, eom).iterrows():
+            self._da[int(r["permno"])] = r.to_dict()
+        return self.target(as_of_date)
+
+    def target(self, as_of_date) -> dict:
+        """Build the book for this month from the base signal plus everything added so far."""
+        self._load()
+        eom = to_eom(as_of_date)
+        self._roll(eom)
+        parts = []
+        if self._base_by_month is not None and eom in self._base_by_month:
+            parts.append(self._base_by_month[eom])
+        else:
+            raise ContractError(
+                f"no dense base signal for {eom.date()}: set BASE_SIGNALS_PATH (characteristics "
+                "model output) or PORTFOLIO_DEMO_BASELINE=1; LLM signals alone cannot fill a "
+                "100-500 name book")
+        if self._sig:
+            parts.append(validate_signals(pd.DataFrame(list(self._sig.values()))[SIG_COLS]))
+        sig = pd.concat(parts, ignore_index=True)
+        da = validate_da(pd.DataFrame(list(self._da.values()), columns=DA_COLS))
+        self._last = self._engine.rebalance(eom, sig, da, self._prev)
+        return self._payload(eom, self._last)
+
+    # --------------------------------------------------------------- reporting
+    def _payload(self, eom: pd.Timestamp, r: Rebalance) -> dict:
+        rows = self._engine.by_month[eom]
+        w = r.weights
+
+        def ticker(p):
+            t = rows.at[p, "ticker_ff"]
+            return str(t) if pd.notna(t) else f"PERMNO{p}"
+
+        d = r.diagnostics
+        reasons = []
+        if d["relax_level"] > 0:
+            reasons.append(f"soft limits relaxed: {d['relaxations']}")
+        if d["policy_breaches"]:
+            reasons.append(f"policy limits breached: {d['policy_breaches']}")
+        if d["beta_imputed_weight"] > 0.25 * d["gross"]:
+            reasons.append("over 25% of gross sits in names with imputed beta")
+        return {
+            "as_of_date": eom.date().isoformat(),
+            "holdings_date": (eom + pd.Timedelta(days=1)).date().isoformat(),
+            "target_weights": [{"permno": int(p), "ticker": ticker(p), "weight": float(x)}
+                               for p, x in w.items()],
+            "constraint_report": {
+                "checks": [{k: _clean(v) for k, v in c.as_dict().items()} for c in r.checks],
+                "diagnostics": {k: _clean(v) for k, v in d.items() if not k.startswith("chk_")},
+            },
+            "human_approval_required": bool(reasons),
+            "approval_reasons": reasons,
+            "trade_rationale": [{k: _clean(v) for k, v in row.items()}
+                                for row in r.trades.drop(columns="date").to_dict("records")],
+            "violations": [],                   # filled by the graph's policy node
+            "sectors": {int(p): str(rows.at[p, "sector"]) for p in w.index},
         }
-        for c in checks:
-            diagnostics["chk_" + c.name] = c.value
-        trades = self._explain(eom, book, held, w, gone, rows)
-        return Rebalance(eom, w, w0, trades, checks, diagnostics)
 
-    # ------------------------------------------------------------ explanation
-    def _explain(self, eom, book, held, w, gone, rows) -> pd.DataFrame:
-        """One row per trade with the reason it was made."""
-        p = self.policy
-        new = w.reindex(book.index).fillna(0.0)
-        moved = book.index[(new - held).abs() > EPS]
-        n_scored = int(book["alpha"].notna().sum())
+    def _all(self):
+        done = list(self._history)
+        if self._last is not None:
+            done.append((self._cur, self._last))
+        return done
+
+    def holdings_frame(self) -> pd.DataFrame:
+        """Submission-format holdings for every month built so far."""
         out = []
-        for permno in moved:
-            b, old, tgt = book.loc[permno], held[permno], new[permno]
-            if old == 0:
-                action = "OPEN_LONG" if tgt > 0 else "OPEN_SHORT"
-            elif tgt == 0:
-                action = "CLOSE_LONG" if old > 0 else "COVER_SHORT"
-            elif np.sign(old) != np.sign(tgt):
-                action = "FLIP"
-            else:
-                action = "ADD" if abs(tgt) > abs(old) else "TRIM"
-            a = b["alpha"]
-            view = ("no score this month" if pd.isna(a) else
-                    f"alpha z={a:+.2f} (long rank {int(b['rank_long'])}, "
-                    f"short rank {int(b['rank_short'])} of {n_scored})")
-            parts = ", ".join(f"{s}={b['z_' + s]:+.2f}" for s in self._sources
-                              if pd.notna(b["z_" + s]))
-            cap = p.max_weight * b["cap_mult"]
-            long_side = old > 0 or (old == 0 and tgt > 0)
-            vetoed = b["veto_long"] if long_side else b["veto_short"]
-            eligible = b["elig"] if long_side else b["elig_short"]
-            if action.startswith("OPEN") or action in ("ADD", "FLIP"):
-                why = f"{view}; sources: {parts or 'n/a'}; devil's advocate: {b['da_action']}"
-                if b["da_action"] == "haircut":
-                    why += f" (size cap cut to {cap:.2%}: {b['da_reason']})"
-            elif vetoed:
-                why = f"devil's-advocate veto: {b['da_reason'] or 'no reason given'}"
-            elif not eligible:
-                why = "no longer passes the size / price / liquidity screen for this side"
-            elif abs(old) > cap + EPS and abs(tgt) >= cap - EPS:
-                why = f"drifted above the {cap:.2%} position cap"
-            elif tgt == 0 or abs(old - tgt) > 0.25 * p.max_weight:
-                why = f"{view}; capital rotated to higher-conviction names"
-            else:
-                why = "small resize to restore dollar / beta / sector neutrality"
-            out.append((permno, rows.at[permno, "ticker_ff"], rows.at[permno, "company_name_ff"],
-                        action, old, tgt, a, why, b["signal_note"]))
-        last = self.by_month.get(eom - MonthEnd(1))
-        for permno, old in gone.items():
-            known = last is not None and permno in last.index
-            out.append((permno, last.at[permno, "ticker_ff"] if known else None,
-                        last.at[permno, "company_name_ff"] if known else None,
-                        "CLOSE_LONG" if old > 0 else "COVER_SHORT", old, 0.0, np.nan,
-                        "no longer in the panel (delisted, acquired or dropped); forced exit", ""))
-        t = pd.DataFrame(out, columns=["permno", "ticker", "company_name", "action",
-                                       "weight_before", "weight_after", "alpha", "reason",
-                                       "signal_note"])
-        t.insert(0, "date", eom + pd.Timedelta(days=1))
-        return t
-
-    # -------------------------------------------------------------------- run
-    def run(self, signals: pd.DataFrame, da: pd.DataFrame | None = None,
-            start="2020-12-31", end="2026-07-31") -> RunResult:
-        """start / end are formation month-ends; holdings are dated the next day."""
-        signals, da = validate_signals(signals), validate_da(da)
-        months = [t for t in sorted(self.by_month) if pd.Timestamp(start) <= t <= pd.Timestamp(end)]
-        sig_by, da_by = dict(tuple(signals.groupby("eom"))), dict(tuple(da.groupby("eom")))
-        prev, holdings, trades, monthly, checks = None, [], [], [], []
-        for t in months:
-            if t not in sig_by:
-                raise ContractError(f"no signals supplied for formation month {t.date()}")
-            r = self.rebalance(t, sig_by[t], da_by.get(t, da.iloc[:0]), prev)
-            prev = r.weights
-            rows = self.by_month[t].loc[r.weights.index]
-            h = pd.DataFrame({
-                "Date": t + pd.Timedelta(days=1), "PERMNO": r.weights.index,
+        for eom, r in self._all():
+            rows = self._engine.by_month[eom].loc[r.weights.index]
+            out.append(pd.DataFrame({
+                "Date": eom + pd.Timedelta(days=1), "PERMNO": r.weights.index,
                 "TICKER": rows["ticker_ff"].values, "COMPANY NAME": rows["company_name_ff"].values,
-                "WEIGHT": r.weights.values, "eom": t,
+                "WEIGHT": r.weights.values, "eom": eom,
                 "label_status": np.where(rows["ticker"].notna(), "verified_in_month",
-                                         np.where(rows["ticker_ff"].notna(),
-                                                  "carried_forward", "unlabeled")),
-            })
-            holdings.append(h.sort_values("WEIGHT", ascending=False))
-            trades.append(r.trades)
-            monthly.append(r.diagnostics)
-            checks += [{"date": r.diagnostics["date"], **c.as_dict()} for c in r.checks]
-        return RunResult(pd.concat(holdings, ignore_index=True),
-                         pd.concat(trades, ignore_index=True),
-                         pd.DataFrame(monthly), pd.DataFrame(checks))
+                                         np.where(rows["ticker_ff"].notna(), "carried_forward",
+                                                  "unlabeled"))}))
+        return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
+
+    def monthly_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([r.diagnostics for _, r in self._all()])
+
+    def trades_frame(self) -> pd.DataFrame:
+        return pd.concat([r.trades for _, r in self._all()], ignore_index=True) if self._all() else pd.DataFrame()

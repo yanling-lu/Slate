@@ -41,6 +41,10 @@ class Policy:
     short_min_dolvol: float = 5e6   # shorts must be more liquid (borrow)
     # --- signal combination ------------------------------------------------
     source_weights: dict = field(default_factory=dict)  # source -> weight, default 1
+    # Sparse, already-scaled sources (e.g. the LLM signal agent, score in [-2, 2]) are
+    # divided by this constant instead of being re-standardised across the few names
+    # they cover. source -> scale.
+    fixed_scale_sources: dict = field(default_factory=dict)
     winsor_z: float = 3.0
     # --- return accounting (backtest only) ---------------------------------
     missing_return_fill: float = 0.0  # excess return assumed when a held name has no outcome
