@@ -44,6 +44,13 @@ infeasible; the hard mandate never relaxes. `guardrails.py` re-checks the finish
 independently of the optimizer. Devil's-advocate `veto` blocks a name on that side;
 `haircut` shrinks its alpha and position cap by `1 - severity`.
 
+## Pipeline wrapper
+
+`agents/portfolio.py` adapts this engine to the LangGraph pipeline (Signal and Challenge
+schemas in, `PortfolioTarget` dict out). See the root README, "Pipeline integration".
+`Policy.fixed_scale_sources` marks sparse sources, such as the LLM signal agent, that are
+used as given instead of being re-standardised across the few names they cover.
+
 ## Upstream spec and audit
 
 `SIGNALS_SPEC.md` defines the walk-forward schedule and the signals/manifest formats.

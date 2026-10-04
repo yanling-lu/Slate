@@ -70,8 +70,12 @@ class PortfolioConstructionAgent:
         self._sources = sorted(sig["source"].unique())
         for src in self._sources:
             s = sig[sig["source"] == src].set_index("permno")
-            sd = s["score"].std(ddof=0)
-            z = (s["score"] - s["score"].mean()) / sd if sd > 0 else s["score"] * 0.0
+            fixed = p.fixed_scale_sources.get(src)
+            if fixed:
+                z = s["score"] / fixed
+            else:
+                sd = s["score"].std(ddof=0)
+                z = (s["score"] - s["score"].mean()) / sd if sd > 0 else s["score"] * 0.0
             z = (z.clip(-p.winsor_z, p.winsor_z) * s["confidence"]).reindex(universe)
             book["z_" + src] = z
             wt = p.source_weights.get(src, 1.0)
@@ -136,6 +140,11 @@ class PortfolioConstructionAgent:
 
         use = (ub_long > 0) | (ub_short > 0) | (held.values != 0)
         idx = book.index[use]
+        if len(idx) < m.min_positions:
+            raise MandateViolation(
+                f"{eom.date()}: only {len(idx)} tradable candidate names "
+                f"({int(book['elig'].sum())} eligible, {int(book['alpha'].notna().sum())} scored); "
+                f"the mandate needs at least {m.min_positions} positions")
         args = (alpha[idx].fillna(0.0).values, held[idx].values, ub_long[use], ub_short[use],
                 book.loc[idx, "beta"].values, book.loc[idx, "sector"].values)
 

@@ -50,6 +50,20 @@ Agents pass CSV or parquet files keyed on `permno` + `eom`, where `eom` is the m
 | Signals | `permno, eom, score` (+ optional `source, confidence, rationale, asof_date`) |
 | Devil's advocate | `permno, eom` + either `action` (`veto`/`haircut`/`pass`) and `severity`, or `objection_score` 0-3 (3 = veto, 2 = halve the bet, 0-1 = keep); optional `side, reason` |
 
+### Pipeline integration (`agents/portfolio.py`)
+
+`PortfolioReconstructionAgent` is the graph-facing wrapper around the engine in `portfolio_agent/`.
+`run(validated_signals, challenges, as_of_date)` returns a `PortfolioTarget`-shaped dict
+(`target_weights`, `sectors`, `constraint_report`, `trade_rationale`, `human_approval_required`).
+
+| Pipeline input | How the portfolio agent uses it |
+|---|---|
+| `Signal` (direction, score in [-2, 2], confidence) | Becomes source `signal_agent`. Neutral and `insufficient_evidence` signals are dropped (no row = no view). Several signals for one stock merge by confidence-weighted mean. Scores are used as given, not re-standardised across the few names with a filing. The model's own `ticker` is ignored; labels come from the panel. |
+| `Challenge` (`recommendation`, `resilience_score`) | `reject` = veto. `revise` = haircut of the alpha and position cap by `1 - resilience_score` (bounded 0.25-0.9). `proceed` = no change. A numeric `objection_score` 0-3 is also accepted. |
+| Dense base signal (`BASE_SIGNALS_PATH`) | Required. The 8-K signal covers only stocks with a filing that month, so a 100-500 name book needs a dense cross-section from the characteristics model. `PORTFOLIO_DEMO_BASELINE=1` uses a labelled placeholder instead. |
+
+The graph runs per stock, so signals for the same month accumulate across calls and each call returns the book built from everything seen so far. The month commits (becomes the previous book for the turnover budget) when a later month is requested. Months must be requested in order, with no gaps. `as_of_date` must be a month-end (day 28 or later), because characteristics are month-end snapshots. The agent makes no LLM calls; `model` is accepted only for interface compatibility. After the last month, `holdings_frame()`, `monthly_frame()` and `trades_frame()` give the submission CSVs.
+
 ### Portfolio construction guardrails
 
 | Limit | Type | Value |
