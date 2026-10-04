@@ -16,6 +16,19 @@ def load_chars() -> pd.DataFrame:
     return df
 
 
+def month_slice(df: pd.DataFrame, as_of_date) -> pd.DataFrame:
+    """Rows of the characteristics panel for the month containing as_of_date.
+
+    `eom` is a calendar month-END timestamp, so the key is the month-end of
+    as_of_date (not the 1st). Rows whose snapshot `date` (last trading day) is after
+    as_of_date are excluded: they were not observable at the cutoff."""
+    month_key = pd.Timestamp(as_of_date).normalize() + pd.offsets.MonthEnd(0)
+    sub = df[df["eom"] == month_key]
+    if "date" in sub.columns:
+        sub = sub[pd.to_datetime(sub["date"]) <= pd.Timestamp(as_of_date)]
+    return sub
+
+
 @lru_cache(maxsize=1)
 def load_filings() -> pd.DataFrame:
     import pyarrow.parquet as pq
