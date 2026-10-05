@@ -101,6 +101,22 @@ class StatsTest(unittest.TestCase):
         self.assertAlmostEqual(sb["share_plausibly_hard_to_borrow_by_weight"], 0.5)   # 3 small; 4 is $20M volume
 
 
+class RunDirDefaultTest(unittest.TestCase):
+    def test_finds_the_newest_run_folder_and_explains_when_there_is_none(self):
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(SystemExit) as ctx:
+                build.latest_run_dir(d)
+            self.assertIn("portfolio_agent.run", str(ctx.exception))
+            for name in ("output_old", "output_new", "output_empty"):
+                (Path(d) / name).mkdir()
+            (Path(d) / "output_old" / "portfolio_returns.csv").write_text("x")
+            time.sleep(0.05)
+            (Path(d) / "output_new" / "portfolio_returns.csv").write_text("x")
+            self.assertEqual(build.latest_run_dir(d).name, "output_new")      # newest wins; output_empty has no run
+
+
 class BuildTest(unittest.TestCase):
     def test_full_build_writes_every_deck_artifact(self):
         with tempfile.TemporaryDirectory() as d:

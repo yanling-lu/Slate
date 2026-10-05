@@ -200,9 +200,25 @@ def headline(st) -> str:
             f"[{ex['net_min']:+.1%}, {ex['net_max']:+.1%}]; turnover {ex['turnover_one_way_avg']:.0%}/month.")
 
 
+def latest_run_dir(root=".") -> Path:
+    """The newest folder here that holds a portfolio run (output*/ with portfolio_returns.csv)."""
+    found = sorted((p for p in Path(root).glob("output*") if (p / "portfolio_returns.csv").exists()),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    if not found:
+        raise SystemExit(
+            "No run folder found. A run folder is what portfolio_agent.run writes (it holds portfolio_returns.csv).\n"
+            "Create one, then re-run this:\n"
+            '  python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" '
+            "--signals out_composite/signals.parquet --out output_run\n"
+            "or point at an existing one:  python report/build.py --run-dir <folder>")
+    if len(found) > 1:
+        print(f"Using the newest run folder: {found[0]}  (others: {', '.join(map(str, found[1:]))}; pick one with --run-dir)")
+    return found[0]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--run-dir", required=True)
+    ap.add_argument("--run-dir", help="folder written by portfolio_agent.run (default: the newest output*/ folder here)")
     ap.add_argument("--out", default="report_out")
     ap.add_argument("--tb3ms", help="FRED TB3MS csv (default: download)")
     ap.add_argument("--sp500", help="FRED SP500 csv (default: download)")
@@ -211,6 +227,7 @@ def main(argv=None):
     ap.add_argument("--notes", default="", help="text shown at the top of REPORT.md")
     ap.add_argument("--quiet", action="store_true", help="do not print the tables to the terminal")
     a = ap.parse_args(argv)
+    a.run_dir = a.run_dir or str(latest_run_dir())
     out = Path(a.out)
     data = out / "market_data"
     tb_path = Path(a.tb3ms) if a.tb3ms else market.fetch_fred("TB3MS", data / "TB3MS.csv", refresh=not a.offline)
