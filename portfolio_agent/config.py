@@ -44,7 +44,7 @@ class Policy:
     # Sparse, already-scaled sources (e.g. the LLM signal agent, score in [-2, 2]) are
     # divided by this constant instead of being re-standardised across the few names
     # they cover. source -> scale.
-    fixed_scale_sources: dict = field(default_factory=dict)
+    fixed_scale_sources: dict = field(default_factory=lambda: {"signal_agent": 1.0})
     winsor_z: float = 3.0
     # --- return accounting (backtest only) ---------------------------------
     missing_return_fill: float = 0.0  # excess return assumed when a held name has no outcome

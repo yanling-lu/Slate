@@ -22,6 +22,7 @@ except Exception:                                   # pydantic not installed
 
 def signal(permno, direction="long", score=1.5, conf=0.7, asof="2020-12-31", **kw):
     d = dict(permno=permno, ticker="ZZZ", as_of_date=asof, direction=direction, score=score,
+             sentiment=score * 1.5, source="filing_8k",          # schema now requires sentiment (+-3)
              confidence=conf, catalyst="Item 2.02 beat", time_horizon_months=1,
              rationale="raised guidance", evidence=[], insufficient_evidence=False)
     d.update(kw)

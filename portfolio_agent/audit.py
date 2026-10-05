@@ -172,11 +172,19 @@ def check_manifest(man, factor_list, rep):
             elif month_end(e[fld]) > lim:
                 errs.append(f"{fld} {e[fld]} is after the allowed {lim.date()}")
         chars, events = e.get("characteristics", []), e.get("events", [])
-        if len(chars) > MAX_CHARS or len(events) > MAX_EVENTS:
+        if e.get("feature_set") in ("all", "composite"):   # declared departure from the 7-feature shortlist
+            if factor_list is not None:
+                if set(chars) - set(factor_list):
+                    errs.append(f"not in factor_char_list.csv: {sorted(set(chars) - set(factor_list))}")
+                if e["feature_set"] == "all" and set(chars) != set(factor_list):
+                    errs.append("feature_set 'all' but characteristics differ from factor_char_list.csv")
+            if len(events) > MAX_EVENTS:
+                errs.append(f"{len(events)} events, limit {MAX_EVENTS}")
+        elif len(chars) > MAX_CHARS or len(events) > MAX_EVENTS:
             errs.append(f"{len(chars)} characteristics / {len(events)} events, "
                         f"limits {MAX_CHARS}/{MAX_EVENTS}")
         unknown = [c for c in chars if factor_list is not None and c not in factor_list]
-        if unknown:
+        if unknown and e.get("feature_set") not in ("all", "composite"):
             errs.append(f"not in factor_char_list.csv: {unknown}")
         if "mixtures_tried" not in e:
             errs.append("missing mixtures_tried (needed to judge multiple testing)")

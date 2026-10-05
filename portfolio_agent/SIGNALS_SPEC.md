@@ -99,6 +99,13 @@ characteristics or 3 events are listed, if a characteristic is not in
 `factor_char_list.csv`, or if `mixtures_tried` is missing. `llm` is required when any
 LLM touches the signals.
 
+### Declared feature sets
+
+`manifest.years[].feature_set` defaults to a 7-feature shortlist (at most 7 characteristics and 3 events). A model that
+deliberately departs from that declares it: `"all"` (all 147; `characteristics` must equal `factor_char_list.csv`) or
+`"composite"` (fixed-sign family composites; every member must be in `factor_char_list.csv`). The audit then skips the
+7-feature cap but still checks the schedule, the data end dates and `mixtures_tried`. The deck must say which was used.
+
 ## 6. `devils_advocate.csv` (optional per-stock objections)
 
 `permno, eom` plus either `action` (`veto`/`haircut`/`pass`) and `severity` 0-1, or

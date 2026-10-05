@@ -51,8 +51,8 @@ def tradable(df: pd.DataFrame, policy: Policy | None = None) -> pd.Series:
             & df["size_grp"].isin(p.size_groups))
 
 
-def load_panel(path, factors) -> pd.DataFrame:
-    cols = list(dict.fromkeys(["permno", "eom"] + list(factors) + SCREEN_COLS + [TARGET]))
+def load_panel(path, factors, extra=()) -> pd.DataFrame:
+    cols = list(dict.fromkeys(["permno", "eom"] + list(factors) + SCREEN_COLS + list(extra) + [TARGET]))
     df = pd.read_parquet(path, columns=cols)
     df["eom"] = pd.to_datetime(df["eom"]) + MonthEnd(0)
     df["permno"] = df["permno"].astype("int64")

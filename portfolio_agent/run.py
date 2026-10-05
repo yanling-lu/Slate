@@ -44,7 +44,7 @@ def _fred(path) -> pd.Series:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--panel", required=True)
-    ap.add_argument("--signals")
+    ap.add_argument("--signals", nargs="+", help="one or more signal files (e.g. base signal + 8-K signal)")
     ap.add_argument("--da", help="devil's-advocate verdicts (optional)")
     ap.add_argument("--demo-baseline", action="store_true")
     ap.add_argument("--out", default="output")
@@ -62,7 +62,7 @@ def main(argv=None):
     if a.demo_baseline:
         signals = demo_signals(a.panel)
     elif a.signals:
-        signals = read_table(a.signals)
+        signals = pd.concat([read_table(p) for p in a.signals], ignore_index=True)
     else:
         ap.error("give --signals or --demo-baseline")
     da = read_table(a.da) if a.da else None
