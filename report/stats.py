@@ -222,3 +222,8 @@ def summarize(r: pd.DataFrame, hold: pd.DataFrame, pnl: pd.DataFrame) -> dict:
             "strategy": strat, "benchmark": bench, "sp500_price_return": sp,
             "risk_adjusted": risk, "exposure": expo, "legs": legs_s, "short_book": short_book(pnl),
             "held_names_missing_return": int(pnl["return_missing"].sum())}
+
+
+if __name__ == "__main__":
+    print("This file is a library and prints nothing by itself.\n"
+          "Run from the repo root:  python -m report.build --run-dir <run folder> --out report_out")

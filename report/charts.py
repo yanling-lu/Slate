@@ -15,7 +15,13 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import FuncFormatter, PercentFormatter
 
-from . import stats as S
+try:
+    from . import stats as S
+except ImportError:                    # run as a script
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from report import stats as S
 
 SURFACE, INK, INK2, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e6e5e1"
 BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#d03b3b"
@@ -265,3 +271,8 @@ def all_charts(r, contrib, out, basis, full_beta):
             rolling_beta(r, out, basis, full_beta), histogram(r, out, basis), calendar(r, out, basis),
             exposures(r, out, basis), turnover(r, out, basis), leg_cumulative(r, out, basis),
             contributors(contrib, r, out, basis)]
+
+
+if __name__ == "__main__":
+    print("This file only draws charts and prints nothing by itself.\n"
+          "Run from the repo root:  python -m report.build --run-dir <run folder> --out report_out")

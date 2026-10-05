@@ -54,3 +54,8 @@ def sp500_monthly_return(path) -> pd.Series:
     eom = s.index + pd.offsets.MonthEnd(0)
     level = s.groupby(eom).last()
     return level.pct_change().dropna()
+
+
+if __name__ == "__main__":
+    print("This file is a library and prints nothing by itself.\n"
+          "Run from the repo root:  python -m report.build --run-dir <run folder> --out report_out")
