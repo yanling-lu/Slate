@@ -90,6 +90,34 @@ The quote must be copied exactly from filing_text."""
 
 
 # ---------------------------------------------------------------------------- helpers
+_ITEM_HEADER = re.compile(r"\bItem\s+\d\.\d{2}\b", re.I)
+_SIGNATURE_BOILERPLATE = re.compile(r"\bSIGNATURES?\s+Pursuant\s+to\s+the\s+requirements", re.I)
+_SIGNATURE = re.compile(r"\bSIGNATURES?\b")
+_IDENTIFIERS = [
+    (re.compile(r"\b\d{2}-\d{7}\b"), "[EIN]"),                                  # IRS employer id
+    (re.compile(r"\b0\d{2}-\d{5}\b"), "[FILE NO]"),                              # SEC commission file number
+    (re.compile(r"\(?\b\d{3}\)?[\s.-]*\d{3}[\s.-]\d{4}\b"), "[PHONE]"),           # telephone
+    (re.compile(r"https?://\S+|www\.\S+|\b[\w.-]+@[\w-]+\.[\w.]+\b"), "[URL]"),      # web and e-mail
+]
+
+
+def strip_identifying_boilerplate(text: str) -> str:
+    """Drop the cover page (everything before the first 'Item x.xx' header) and the signature block,
+    then mask identifiers that survive. The cover page carries the name, address, phone, EIN and
+    SEC file number, which would let a model recognise the company from memory."""
+    m = _ITEM_HEADER.search(text)
+    if m and m.start() > 0:
+        text = text[m.start():]
+    boiler = list(_SIGNATURE_BOILERPLATE.finditer(text))
+    sig = list(_SIGNATURE.finditer(text))
+    if boiler:                                                    # the standard signature-page sentence
+        text = text[: boiler[-1].start()]
+    elif sig and sig[-1].start() > 0.6 * len(text):               # otherwise a SIGNATURE heading near the end
+        text = text[: sig[-1].start()]
+    for pat, repl in _IDENTIFIERS:
+        text = pat.sub(repl, text)
+    return text.strip()
+
 def items_of(f: dict) -> list[str]:
     """Item codes from a filing record (list, string, or the text's own 'Item x.xx' headers)."""
     raw = f.get("items")
@@ -188,7 +216,14 @@ class EightKSentimentAgent:
         return bool(set(items_of(f)) & set(self.items)) and bool(str(f.get("text") or "").strip())
 
     def _redact(self, f: dict) -> str:
-        return redact_for_llm(str(f.get("text") or ""), f.get("ticker") or "", f.get("company_name") or "")[: self.max_chars]
+        text = strip_identifying_boilerplate(str(f.get("text") or ""))
+        company = str(f.get("company_name") or "")
+        out = redact_for_llm(text, f.get("ticker") or "", company)
+        # also mask the name without its legal suffix ("Acme" for "Acme Corp"), which redact_for_llm misses
+        stem = re.sub(r"[\s,.]*\b(inc|corp|corporation|co|company|ltd|plc|llc|lp|holdings?|group|n\.?v\.?|s\.?a\.?)\b\.?\s*$", "", company, flags=re.I).strip()
+        if len(stem) >= 4:
+            out = re.sub(rf"\b{re.escape(stem)}\w*", "[COMPANY]", out, flags=re.I)
+        return out[: self.max_chars]
 
     def _raw_answer(self, f: dict, redacted: str, count_hit: bool) -> dict:
         """The model's answer for one filing: from the cache, or from one LLM call (then cached)."""
