@@ -80,12 +80,16 @@ Composite model, same conditions (gross of costs, real TB3MS and S&P 500; not fi
 |---|---|---|
 | Rank IC (68 months) | 0.053 | 0.037 |
 | CAGR | 11.1% | 0.9% |
-| Sharpe | 0.48 | -0.05 |
-| Information ratio vs cash + 4% | +0.27 | -0.28 |
+| Sharpe | 0.47 | -0.06 |
+| Information ratio vs cash + 4% | +0.26 | -0.29 |
 | Max drawdown | -26.5% | -34.3% |
-| Beta / SE | **-0.43** / 0.14 | -0.29 / 0.13 |
+| Beta / SE (Newey-West) | **-0.34** / 0.17 | -0.23 / 0.16 |
 
-Calendar years, composite vs hurdle: 2021 +63.8% vs 4.1%; 2022 +38.7% vs 6.2%; 2023 -6.7% vs 9.5%; 2024 +1.2% vs 9.3%; 2025 -2.3% vs 8.4%; 2026 (8 months) -13.2% vs 5.2%. **The gain is concentrated in 2021-2022; the model is negative after that.** The realised beta is well away from zero even though ex-ante beta is held within +-0.05, which the challenge reads as a neutrality failure. Treat both as open problems.
+Calendar years, composite vs hurdle: 2021 +63.8% vs 4.1%; 2022 +38.7% vs 6.2%; 2023 -6.7% vs 9.5%; 2024 +1.2% vs 9.3%; 2025 -2.3% vs 8.4%; 2026 (8 months) -13.2% vs 5.2%. **The gain is concentrated in 2021-2022; the model is negative after that.** The realised beta (-0.34, t about -2) is well away from zero even though the optimiser holds ex-ante beta within +-0.05, which the challenge reads as a neutrality failure.
+
+#### Why the beta is negative
+
+It is a style effect, not stock betas. The long stocks' realised beta is +1.02 and the short stocks' +1.38, so the dollar-neutral book is net short about 0.34 of market beta. The short side is the more volatile one (1.6x the volatility of the long side), 29% of it has no `beta_60m` (long side: 6%) and is filled with a median, and the slow `beta_60m` understates how these names move with the market. Adding a high-minus-low volatility factor (built from the panel) to the regression takes the market beta to +0.12 (SE 0.12) and the book loads -0.73 on the factor (monthly correlation -0.74). That factor fell 21% and 33% in 2021-2022, when the book gained 64% and 36%, and rose in 2023, 2025 and 2026, when the book lost. The composite is in effect a short-volatility bet that paid in 2021-2022 and has lost since, and about 60% of its headline alpha (12.7% to 5.3% a year) is explained by that exposure. Untested fixes: a volatility-neutral constraint in the optimiser, a faster beta estimate, and imputing missing betas by volatility bucket instead of the overall median.
 
 ### Composite factor model (feature selection)
 
@@ -220,7 +224,7 @@ Preprocessing steps are implemented and documented in the code.
 ### Known gaps
 
 - The 8-K sentiment agent has not been run against the API; its effect on results is unmeasured.
-- The composite model's realised beta (-0.43) and its fade after 2022 need investigation.
+- The composite model's realised beta (-0.34 vs the S&P 500) and its fade after 2022 are a style effect (see "Why the beta is negative"); neutralising volatility explicitly is untested.
 - Two tests fail on `main` since the `Signal` schema change (`sentiment` is now required): `tests/test_pipeline.py::test_validator_rejects_lookahead` (the validator no longer raises) and `tests/test_schemas.py::test_characteristic_only_signal_ok`.
 - No LLM signal has been run: the Signals Agent needs keys and prompts, and a loop over stocks and months.
 - The Devil's Advocate is in PR #4 and not yet wired to produce results.
