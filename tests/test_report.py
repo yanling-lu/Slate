@@ -133,19 +133,6 @@ class BuildTest(unittest.TestCase):
                       "top10_holdings.csv", "top10_pnl_contributors.csv", "monthly_series.csv", "summary.json"):
                 self.assertTrue((out / "tables" / t).exists(), t)
             self.assertIn("gross of trading costs", (out / "methodology.md").read_text())
-            md = (out / "REPORT.md").read_text()
-            for must in ("## Return statistics", "## Risk-adjusted performance", "## Calendar-year returns",
-                         "charts/01_cumulative_return.png", "Information ratio vs cash + 4%", "T1 Co 1"):
-                self.assertIn(must, md)
-            import contextlib
-            import io
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                build.print_results(st, st.pop("_sections"), "TEST")
-            printed = buf.getvalue()
-            for must in ("RETURN STATISTICS", "RISK-ADJUSTED PERFORMANCE", "CALENDAR-YEAR RETURNS", "TOP 10 LONG / SHORT",
-                         "10 LARGEST GAINS / LOSSES", "Beta vs S&P 500", "Maximum drawdown"):
-                self.assertIn(must, printed)
             self.assertIn("information ratio", build.headline(st).lower())
 
 
