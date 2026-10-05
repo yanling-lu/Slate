@@ -17,7 +17,7 @@ Design rules (the same ones the team's guardrails enforce):
   * One LLM call per filing, temperature 0, cached by (model, prompt hash, document, text hash);
     a call budget (`max_calls`) stops runaway cost.
 
-CLI (batch over months, writes a signals file the portfolio agent can read):
+CLI (batch over months, writes a signals CSV the portfolio agent can read):
 
     python -m agents.eightk_signal --filings "Provided Documents/8k_20150101_20260831_identified.parquet" \
         --estimate                                  # filing counts and tokens, no API calls
@@ -44,6 +44,7 @@ import pandas as pd
 from pandas.tseries.offsets import MonthEnd
 
 from guardrails.injection import redact_for_llm, scan_injection
+from portfolio_agent.parquet_io import read_parquet
 
 MATERIAL_ITEMS = ("1.01", "1.02", "2.01", "2.02", "2.05", "2.06", "4.01", "4.02", "5.02")
 OTHER_ITEMS = ("3.01", "7.01", "8.01")                  # opt in with items=MATERIAL_ITEMS + OTHER_ITEMS
@@ -347,7 +348,7 @@ def load_filings_month(path, eom: pd.Timestamp, columns=FILING_COLS) -> pd.DataF
     cols = [c for c in columns if c in avail]
     first = (eom + MonthEnd(0)).replace(day=1).date()
     last = (eom + MonthEnd(0)).date()
-    df = pd.read_parquet(path, columns=cols, filters=[("filing_date", ">=", first), ("filing_date", "<=", last)])
+    df = read_parquet(path, columns=cols, between=("filing_date", first, last))
     df["filing_date"] = pd.to_datetime(df["filing_date"]).dt.date
     return df
 
@@ -382,7 +383,7 @@ def build_signals(agent: EightKSentimentAgent, filings_for_month, months, progre
 
 def estimate(path, start="2020-12", end="2026-07", items=MATERIAL_ITEMS, max_chars=MAX_CHARS) -> dict:
     """How many filings and tokens a run would send. Reads metadata only; makes no API call."""
-    df = pd.read_parquet(path, columns=["permno", "filing_date", "items", "text_chars"])
+    df = read_parquet(path, columns=["permno", "filing_date", "items", "text_chars"])
     df["eom"] = pd.to_datetime(df["filing_date"]) + MonthEnd(0)
     df = df[(df["eom"] >= pd.Timestamp(start) + MonthEnd(0)) & (df["eom"] <= pd.Timestamp(end) + MonthEnd(0))]
     codes = df["items"].apply(lambda x: sorted(set(re.findall(r"\d\.\d{2}", " ".join(map(str, x)))) - {"9.01"})
@@ -437,8 +438,8 @@ def main(argv=None):
     live, full = build_signals(agent, lambda e: load_filings_month(a.filings, e), months, workers=a.workers)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    live.to_parquet(out / "signals_8k.parquet", index=False)
-    full.to_parquet(out / "signals_8k_all.parquet", index=False)
+    live.to_csv(out / "signals_8k.csv", index=False, date_format="%Y-%m-%d")
+    full.to_csv(out / "signals_8k_all.csv", index=False, date_format="%Y-%m-%d")
     (out / "eightk_manifest.json").write_text(json.dumps({
         "llm": {"model": a.model, "temperature": 0.0, "prompt_hash": agent.prompt_hash,
                 "knowledge_cutoff": a.knowledge_cutoff, "max_steps": 1,
@@ -447,7 +448,7 @@ def main(argv=None):
                                      "the redacted text; pre/post-cutoff IC split reported"},
         "items": list(items), "window": [a.start, a.end], "stats": agent.stats,
         "signals_written": int(len(live)), "neutral_not_written": int(len(full) - len(live))}, indent=2))
-    print(json.dumps(agent.stats, indent=2), f"\n{len(live)} directional signals -> {out / 'signals_8k.parquet'}")
+    print(json.dumps(agent.stats, indent=2), f"\n{len(live)} directional signals -> {out / 'signals_8k.csv'}")
 
 
 if __name__ == "__main__":

@@ -249,7 +249,7 @@ def run(panel_path, factor_path, out_dir, families=None, years=range(FIRST_TEST_
     manifest["oos_report"] = test_report(signals, df, manifest)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    signals[["permno", "eom", "score", "source", "pred_ret", "rationale"]].to_parquet(out / "signals.parquet", index=False)
+    signals[["permno", "eom", "score", "source", "pred_ret", "rationale"]].to_csv(out / "signals.csv", index=False, date_format="%Y-%m-%d")
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
     return signals, manifest
 

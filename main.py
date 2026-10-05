@@ -12,7 +12,7 @@ Usage:
 
 Env (in .env):
     PORTFOLIO_DEMO_BASELINE=1       synthesize a base signal (dev)
-    BASE_SIGNALS_PATH=...           path to base_signals.parquet (prod)
+    BASE_SIGNALS_PATH=...           path to base_signals.csv (prod)
     CHARS_PATH=...                  panel (shared by both agents)
     DEBUG_VALIDATION=true           dump raw LLM output before validation
     LANGCHAIN_TRACING_V2=true       enable LangSmith (default: disabled)
@@ -161,7 +161,7 @@ def run_pipeline(as_of: str, permnos: list[int]) -> dict:
     if not ok:
         raise SystemExit(
             "No base signal configured. Set PORTFOLIO_DEMO_BASELINE=1 (dev) or "
-            "BASE_SIGNALS_PATH=data/base_signals.parquet (prod) in .env"
+            "BASE_SIGNALS_PATH=data/base_signals.csv (prod) in .env"
         )
     print(f"base signal source: {source}")
 

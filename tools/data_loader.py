@@ -6,12 +6,13 @@ as-of filter, memory caching, and column selection in one place.
 from __future__ import annotations
 import pandas as pd
 from config import settings
+from portfolio_agent.parquet_io import read_parquet
 from functools import lru_cache
 
 
 @lru_cache(maxsize=1)
 def load_chars() -> pd.DataFrame:
-    df = pd.read_parquet(settings.CHARS_PATH, columns=None )
+    df = read_parquet(settings.CHARS_PATH)
     df["eom"] = pd.to_datetime(df["eom"])
     return df
 
@@ -44,7 +45,7 @@ def load_filings() -> pd.DataFrame:
             "text_chars", "word_count",
         ] if c in available]
 
-    df = pd.read_parquet(path, columns=cols)
+    df = read_parquet(path, columns=cols)
     df["filing_date"] = pd.to_datetime(df["filing_date"]).dt.date
 
     if "items" in df.columns and "items" not in df.columns:

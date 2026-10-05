@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from .data import month_end
+from .parquet_io import read_parquet
 
 FORBIDDEN = ("lead", "fwd", "forward", "future", "next_month", "target")
 DA_ACTIONS = {"veto", "haircut", "pass"}
@@ -36,7 +37,7 @@ class ContractError(ValueError):
 
 def read_table(path) -> pd.DataFrame:
     path = Path(path)
-    return pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
+    return read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
 
 
 def _common(df: pd.DataFrame, required, name: str) -> pd.DataFrame:

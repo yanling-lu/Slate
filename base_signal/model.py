@@ -33,6 +33,7 @@ from pandas.tseries.offsets import MonthEnd
 from scipy.stats import rankdata
 
 from portfolio_agent.config import Policy
+from portfolio_agent.parquet_io import read_parquet
 from portfolio_agent.splits import FIRST_TEST_YEAR, LAST_TEST_YEAR, split_for_year
 
 TARGET = "ret_exc_lead1m"
@@ -53,7 +54,7 @@ def tradable(df: pd.DataFrame, policy: Policy | None = None) -> pd.Series:
 
 def load_panel(path, factors, extra=()) -> pd.DataFrame:
     cols = list(dict.fromkeys(["permno", "eom"] + list(factors) + SCREEN_COLS + list(extra) + [TARGET]))
-    df = pd.read_parquet(path, columns=cols)
+    df = read_parquet(path, columns=cols)
     df["eom"] = pd.to_datetime(df["eom"]) + MonthEnd(0)
     df["permno"] = df["permno"].astype("int64")
     return df.sort_values(["eom", "permno"]).reset_index(drop=True)
@@ -218,7 +219,7 @@ def run(panel_path, factor_path, out_dir) -> tuple[pd.DataFrame, dict]:
     manifest["oos_report"] = report
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    signals[["permno", "eom", "score", "source", "pred_ret", "rationale"]].to_parquet(out / "signals.parquet", index=False)
+    signals[["permno", "eom", "score", "source", "pred_ret", "rationale"]].to_csv(out / "signals.csv", index=False, date_format="%Y-%m-%d")
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
     return signals, manifest
 

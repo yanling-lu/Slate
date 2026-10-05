@@ -1,7 +1,7 @@
 """Look-ahead / leakage audit for the files the upstream agents hand to the portfolio agent.
 
     python -m portfolio_agent.audit --panel "Provided Documents/chars_final_with_names.parquet" \
-        --signals inputs/signals.parquet --manifest inputs/manifest.json --da inputs/da.csv
+        --signals inputs/signals.csv --manifest inputs/manifest.json --da inputs/da.csv
 
 Exit code 1 if any check FAILs. WARNs need a human decision. See SIGNALS_SPEC.md.
 
@@ -21,6 +21,7 @@ from pandas.tseries.offsets import MonthEnd
 
 from .contracts import ContractError, read_table, validate_da, validate_signals
 from .data import OUTCOME_COL, month_end
+from .parquet_io import read_parquet
 from .splits import FIRST_TEST_YEAR, LAST_TEST_YEAR, split_for_year
 
 IC_WARN, IC_FAIL = 0.10, 0.20          # real monthly rank ICs are ~0.02-0.08
@@ -277,7 +278,7 @@ def main(argv=None):
     ap.add_argument("--factor-list", help="factor_char_list.csv (default: next to the panel)")
     ap.add_argument("--out", help="write the findings as json")
     a = ap.parse_args(argv)
-    panel = pd.read_parquet(a.panel, columns=["permno", "eom", OUTCOME_COL])
+    panel = read_parquet(a.panel, columns=["permno", "eom", OUTCOME_COL])
     fl = Path(a.factor_list) if a.factor_list else Path(a.panel).with_name("factor_char_list.csv")
     factors = set(pd.read_csv(fl)["variable"]) if fl.exists() else None
     manifest = json.loads(Path(a.manifest).read_text()) if a.manifest else None

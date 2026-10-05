@@ -105,7 +105,7 @@ Each stock's rationale in the signal file lists its family composites. The manif
 
 ### 8-K sentiment agent
 
-`python -m agents.eightk_signal --filings "Provided Documents/8k_20150101_20260831_identified.parquet" --estimate` sizes a run without any API call. A real run needs `OPENAI_API_KEY`, `--max-calls`, and writes `signals_8k.parquet` (directional signals only, source `signal_agent`) plus `signals_8k_all.parquet` and `eightk_manifest.json`. Feed it to the portfolio next to the base signal: `--signals out_composite/signals.parquet out_8k/signals_8k.parquet`.
+`python -m agents.eightk_signal --filings "Provided Documents/8k_20150101_20260831_identified.parquet" --estimate` sizes a run without any API call. A real run needs `OPENAI_API_KEY`, `--max-calls`, and writes `signals_8k.csv` (directional signals only, source `signal_agent`) plus `signals_8k_all.csv` and `eightk_manifest.json`. Feed it to the portfolio next to the base signal: `--signals out_composite/signals.csv out_8k/signals_8k.csv`.
 
 - **Inputs and cutoff:** filings dated in the formation month and on or before month-end only (the challenge: accumulate the month's news to forecast the next month). Only material items (1.01, 1.02, 2.01, 2.02, 2.05, 2.06, 4.01, 4.02, 5.02) are sent; the rest are skipped before any LLM call. `--include-other-items` adds 3.01, 7.01, 8.01.
 - **Signal:** `sentiment` in [-3, +3]; direction long at >= +0.5, short at <= -0.5, otherwise neutral; `score` = sentiment x 2/3; `source = "filing_8k"`. Several filings in a month are combined by confidence-weighted mean, and conflicting filings cancel to neutral.
@@ -153,30 +153,42 @@ A hard-limit breach aborts the run and writes nothing. Policy limits relax one s
 
 ## Quick start
 
+Run everything from the repo root, in this order. **Each step needs the file the step before it creates:**
+generated files (the `out_*/` and `output*/` folders) are not stored in git, so a fresh clone has none of them.
+
 ```bash
-pip install -r requirements.txt       # also needs matplotlib for the report
+pip install -r requirements.txt
 python -m pytest tests                # and: python -m unittest discover -s portfolio_agent/tests -t .
 
-# 1. dense base signal from the characteristics (about 2 minutes on CPU)
-python -m base_signal.model --panel "Provided Documents/chars_final_with_names.parquet" --out out_base
+# 1. create the signal file  ->  out_composite/signals.csv + manifest.json   (about 15 seconds)
+python -m base_signal.composites --panel "Provided Documents/chars_final_with_names.parquet" --out out_composite
 
 # 2. look-ahead audit of the signal and its manifest
 python -m portfolio_agent.audit --panel "Provided Documents/chars_final_with_names.parquet" \
-    --signals out_base/signals.parquet --manifest out_base/manifest.json
+    --signals out_composite/signals.csv --manifest out_composite/manifest.json
 
-# 3. build the portfolio and backtest
+# 3. build the portfolio and backtest  ->  output_run/ (holdings.csv, portfolio_returns.csv, ...)
 python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" \
-    --signals out_base/signals.parquet --out output_base
+    --signals out_composite/signals.csv --out output_run
+
+# 4. write the charts and tables  ->  results/composite/ (prints a one-line headline)
+python -m report.build --run-dir output_run --out results/composite
 ```
 
-The provided data files are not stored in this repo. Place them in `Provided Documents/`. `--demo-baseline` runs with a fixed momentum/quality/value placeholder instead of `--signals`; add `--da` for Devil's Advocate objections, and `--tb3ms` / `--sp500` to use your own benchmark files.
+Everything the code generates is CSV or JSON. Only the challenge's own data files (`Provided Documents/*.parquet`) are parquet, and they are not stored in this repo: place them in `Provided Documents/`. The older 7-feature model is `python -m base_signal.model --panel ... --out out_base`. `--demo-baseline` runs with a fixed momentum/quality/value placeholder instead of `--signals`; add `--da` for Devil's Advocate objections, and `--tb3ms` / `--sp500` to use your own benchmark files. To combine signals, list several files after `--signals`.
 
-Environment note: reading the characteristics parquet failed with `pyarrow` 19 ("Repetition level histogram size mismatch"); `pyarrow` 25 (as pinned in `requirements.txt`) reads it.
+**Troubleshooting**
+
+| Message | Cause and fix |
+|---|---|
+| `Signals file not found: out_composite/signals.csv` | Step 1 has not been run on this machine. Run it first. |
+| `OSError: Repetition level histogram size mismatch` or `Cannot read ... with pyarrow 19` | An old `pyarrow` cannot read the challenge's parquet files. `pip install -U "pyarrow>=25"` (what `requirements.txt` pins). If `fastparquet` is installed the code falls back to it automatically. |
+| `Data file not found: Provided Documents/...` | The challenge data is not in git. Put it in `Provided Documents/` or pass the full path with `--panel`. |
 
 ## Deck report pack (`report/`)
 
 ```bash
-python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" --signals out_base/signals.parquet --out output_base
+python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" --signals out_base/signals.csv --out output_base
 python -m report.build --run-dir output_base --out report_out     # downloads TB3MS and S&P 500 from FRED (no key)
 ```
 

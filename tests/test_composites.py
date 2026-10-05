@@ -105,5 +105,26 @@ class CompositeTest(unittest.TestCase):
         self.assertTrue(rep2.failed)
 
 
+class OutputIsCsvTest(unittest.TestCase):
+    def test_run_writes_csv_not_parquet_and_the_portfolio_contract_reads_it_back(self):
+        import tempfile
+        from pathlib import Path
+
+        from base_signal.composites import run
+        from portfolio_agent.contracts import read_table, validate_signals
+        df = panel()
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            df.to_parquet(d / "panel.parquet")                         # the challenge data stays parquet
+            pd.DataFrame({"variable": [c for fam in FAMS.values() for c in fam]}).to_csv(d / "factors.csv", index=False)
+            sig, _ = run(d / "panel.parquet", d / "factors.csv", d / "out", families=FAMS)
+            self.assertTrue((d / "out" / "signals.csv").exists())
+            self.assertEqual(list(d.glob("out/*.parquet")), [])
+            back = validate_signals(read_table(d / "out" / "signals.csv"))
+            self.assertEqual(len(back), len(sig))
+            self.assertEqual(back["eom"].min(), pd.Timestamp("2020-12-31"))
+            np.testing.assert_allclose(np.sort(back["score"].to_numpy()), np.sort(sig["score"].to_numpy()), rtol=1e-12)
+
+
 if __name__ == "__main__":
     unittest.main()

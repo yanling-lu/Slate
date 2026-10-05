@@ -9,7 +9,7 @@ that keep it free of look-ahead. `python -m portfolio_agent.audit` enforces thes
 Signals Agent: proposes up to 20 characteristics + top 5 8-K event drivers (training data only)
 Devil's Advocate: cuts to 7 of the 147 characteristics + 3 8-K events, ranked 1-10
 Fitting code: builds feature mixtures, fits on train, picks the best on VALIDATION, scores TEST
-Portfolio agent: signals.parquet (+ optional objections) -> long/short weights
+Portfolio agent: signals.csv (+ optional objections) -> long/short weights
 ```
 
 The portfolio agent never fits a model and never reads a forward return.
@@ -51,9 +51,9 @@ never used for fitting, even if their characteristic month is earlier.
    restricted to documents available at t (see `llm` in the manifest).
 7. **Record the multiple-testing load** (`mixtures_tried`). It goes in the deck.
 
-## 4. `signals.parquet` (or csv)
+## 4. `signals.csv`
 
-One row per stock-month-source.
+One row per stock-month-source. The files our code writes are CSV (a parquet file is also accepted as input).
 
 | Column | Required | Notes |
 |---|---|---|
@@ -116,7 +116,7 @@ and `reason`. List only stocks being objected to.
 
 ```bash
 python -m portfolio_agent.audit --panel "Provided Documents/chars_final_with_names.parquet" \
-    --signals inputs/signals.parquet --manifest inputs/manifest.json --da inputs/devils_advocate.csv
+    --signals inputs/signals.csv --manifest inputs/manifest.json --da inputs/devils_advocate.csv
 ```
 
 | Check | FAIL when |

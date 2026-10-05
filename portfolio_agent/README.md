@@ -5,7 +5,7 @@ long/short weights that satisfy the McGill-FIAM 2026 market-neutral mandate.
 
 ```bash
 python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" \
-    --signals inputs/signals.parquet --da inputs/devils_advocate.csv \
+    --signals inputs/signals.csv --da inputs/devils_advocate.csv \
     --tb3ms TB3MS.csv --sp500 sp500_monthly.csv --out output
 python -m unittest discover -s portfolio_agent/tests -t .
 ```

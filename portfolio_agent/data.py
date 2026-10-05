@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 from pandas.tseries.offsets import MonthEnd
 
+from .parquet_io import read_parquet
+
 # Everything here is known at the end of formation month t.
 FORMATION_COLS = [
     "permno", "eom", "ticker", "company_name", "me", "prc", "dolvol_126d",
@@ -32,12 +34,12 @@ def prepare_panel(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_panel(path) -> pd.DataFrame:
     """Formation-safe columns only."""
-    return prepare_panel(pd.read_parquet(path, columns=FORMATION_COLS))
+    return prepare_panel(read_parquet(path, columns=FORMATION_COLS))
 
 
 def load_outcomes(path) -> pd.DataFrame:
     """Forward returns, for the backtest only. Keyed by formation month."""
-    df = pd.read_parquet(path, columns=["permno", "eom", "me", OUTCOME_COL])
+    df = read_parquet(path, columns=["permno", "eom", "me", OUTCOME_COL])
     df["eom"] = month_end(df["eom"])
     df["permno"] = df["permno"].astype("int64")
     return df

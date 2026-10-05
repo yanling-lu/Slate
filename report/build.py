@@ -97,7 +97,7 @@ def latest_run_dir(root=".") -> Path:
             "No run folder found. A run folder is what portfolio_agent.run writes (it holds portfolio_returns.csv).\n"
             "Create one, then re-run this:\n"
             '  python -m portfolio_agent.run --panel "Provided Documents/chars_final_with_names.parquet" '
-            "--signals out_composite/signals.parquet --out output_run\n"
+            "--signals out_composite/signals.csv --out output_run\n"
             "or point at an existing one:  python report/build.py --run-dir <folder>")
     if len(found) > 1:
         print(f"Using the newest run folder: {found[0]}  (others: {', '.join(map(str, found[1:]))}; pick one with --run-dir)")
